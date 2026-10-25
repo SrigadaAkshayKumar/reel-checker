@@ -1,8 +1,8 @@
 # Reel Fact-Checker
 
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
-`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done in `backend/`: Phases 1-3 (pipeline +
-CLI) and Phase 4 (FastAPI + job queue + share page). Next: Phase 5, the Next.js frontend.
+`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-3 (pipeline + CLI) and 4
+(FastAPI + job queue) in `backend/`, Phase 5 (Next.js web app) in `frontend/`. Next: Phase 6, own index + real test reels.
 
 ## Rules that define the product
 
@@ -23,6 +23,10 @@ cd backend
 pytest -q && ruff check .     # must pass before every commit; no network or keys needed
 python run.py <video> [--caption ...] [--posted YYYY-MM-DD]
 uvicorn app.main:app --port 8000   # API + share page + upload page, embedded worker
+
+cd ../frontend
+npm run lint && npm run typecheck && npm test && npm run build    # before every frontend commit
+npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright against the real backend
 ```
 
 - Settings and thresholds live only in `app/core/config.py` (env-overridable). Tune thresholds on test reels.
@@ -36,3 +40,7 @@ uvicorn app.main:app --port 8000   # API + share page + upload page, embedded wo
   `HTTPException(status, {"code", "message"})` with a user-facing message. Report ids are the job ids (12 hex).
 - The worker must always delete the upload (`finally`) and must never put exception text in a job's `error`.
 - Share-page text is public: no internal check names, env vars or stack details. Those stay in `checks`.
+- Frontend: Next.js 16 with Cache Components. Read `frontend/AGENTS.md` and the bundled docs before using a Next
+  API. Runtime values (dates, `navigator`) must not be read during prerender: use `useSyncExternalStore` with a
+  server snapshot. The browser talks to the backend directly (`NEXT_PUBLIC_API_URL`); types in `frontend/lib/api.ts`
+  mirror the backend JSON, so change both together. Same wording rules as the share page: plain, public, no internals.

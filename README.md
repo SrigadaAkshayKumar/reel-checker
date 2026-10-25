@@ -19,8 +19,9 @@ full plan: [`docs/workflow.md`](docs/workflow.md).
 
 ## Status
 
-Phases 1-4 of the plan: the analysis pipeline (CLI) and the FastAPI backend with a job queue, a shareable
-report page and a minimal upload page. The Next.js frontend (Phase 5) comes next.
+Phases 1-5 of the plan: the analysis pipeline (CLI), the FastAPI backend with a job queue, and the Next.js
+web app (`frontend/`, see [`frontend/README.md`](frontend/README.md)). Next: the own index of known footage and
+testing on real reels (Phase 6), then deployment.
 
 ## Quick start
 
@@ -57,7 +58,10 @@ cd backend
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000 for the upload page. Interactive API docs are at `/docs`. One worker thread runs
+For the full web app, run the Next.js frontend too (`cd frontend && npm install && npm run dev`, then open
+http://localhost:3000; start the backend with `CORS_ORIGINS=http://localhost:3000 PUBLIC_BASE_URL=http://localhost:3000`).
+The backend's own minimal upload page at http://localhost:8000 and `/r/{id}` page still work without it.
+Interactive API docs are at `/docs`. One worker thread runs
 inside the server (`EMBEDDED_WORKER=true`), which is enough for a single free VM. To scale, set it to `false`
 and run one or more `python -m app.worker` processes against the same database. Claiming a job is atomic.
 
@@ -142,6 +146,8 @@ backend/
   app/pipeline/             extract, transcribe, ocr, llm (Gemini), claims, fingerprint, clip,
                             evidence/{own_index,factcheck_api,youtube,vision_web}, verdict, report, runner
   tests/                    synthetic reels via ffmpeg; every external API faked; API via TestClient
+  tests/e2e_server.py       real API + worker with faked external services, for the frontend's Playwright tests
+frontend/                   Next.js 16 web app: upload, live progress, report page, privacy page
 data/seed/                  how to seed known debunked footage
 docs/                       project overview + full workflow
 ```

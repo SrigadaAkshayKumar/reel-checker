@@ -1,0 +1,19 @@
+.hero { padding: 12px 0 4px; }
+.hero .lede { max-width: 38rem; }
+
+.section { padding-top: 20px; }
+
+.steps, .verdicts { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.steps li { display: flex; gap: 12px; align-items: flex-start; }
+.steps p, .verdicts p { margin: 0; }
+.num {
+  flex: none; width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
+  background: var(--info-bg); color: var(--info); font-weight: 700; font-size: 0.9rem;
+}
+.verdicts li { display: grid; gap: 6px; justify-items: start; }
+
+@media (min-width: 640px) {
+  .steps { grid-template-columns: repeat(3, 1fr); }
+  .steps li { flex-direction: column; }
+  .verdicts { grid-template-columns: 1fr 1fr; }
+}

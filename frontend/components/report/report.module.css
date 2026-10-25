@@ -1,0 +1,48 @@
+.verdict { display: grid; gap: 6px; }
+.verdict p { margin: 0; }
+.badge {
+  justify-self: start;
+  font-size: clamp(1.5rem, 6vw, 2rem);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  margin: 2px 0 4px;
+}
+.meaning { font-size: 1.05rem; }
+.confidence { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; margin-top: 6px; }
+.meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.meter > span { display: block; height: 100%; background: currentColor; }
+
+.claim { font-size: 1.1rem; font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 0.95rem; }
+.facts dt { color: var(--text-2); }
+.facts dd { margin: 0; }
+
+.summary { white-space: pre-line; }
+.summary + .summary { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+.compare { margin: 0; }
+.compare + .compare { margin-top: 16px; }
+.compare img { border-radius: var(--radius-sm); border: 1px solid var(--line); width: 100%; }
+.compare figcaption { margin-top: 6px; }
+
+.evidenceList { list-style: none; margin: 0; padding: 0; }
+.evidence { padding: 10px 0; border-top: 1px solid var(--line); }
+.evidence:first-child { border-top: 0; padding-top: 0; }
+.evidence p { margin: 4px 0 0; }
+.evidenceHead { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+.evidenceHead a { overflow-wrap: anywhere; font-weight: 600; }
+.leads { margin-top: 12px; }
+
+.frames { list-style: none; margin: 8px 0 12px; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.frames img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--line); background: #000; }
+.frameLinks { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; font-size: 0.85rem; }
+.links { margin: 0; padding-left: 18px; }
+.links li + li { margin-top: 4px; }
+
+.share { display: grid; gap: 8px; }
+@media (min-width: 480px) { .share { display: flex; flex-wrap: wrap; } }
+
+.tech summary { color: var(--text-2); }
+.checks { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin: 8px 0; }
+.checks th, .checks td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.checks th { color: var(--text-2); font-weight: 600; }

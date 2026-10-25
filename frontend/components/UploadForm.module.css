@@ -1,0 +1,32 @@
+.form { padding: 16px; }
+
+.drop {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 22px 16px;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  font-weight: 400;
+  transition: border-color 0.15s, background 0.15s;
+}
+.drop:hover, .dragging { border-color: var(--accent); }
+.drop:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.chosen { border-style: solid; border-color: var(--accent); background: var(--info-bg); }
+.drop > span { display: flex; flex-direction: column; min-width: 0; }
+.icon { flex: none; color: var(--accent); }
+.fileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.more { margin: 16px 0 4px; }
+
+.error { margin: 14px 0 0; }
+
+.form > button, .progress { margin-top: 16px; }
+.progress { display: grid; gap: 6px; }
+.bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.2s; }
+
+.note { margin: 12px 0 0; text-align: center; }
