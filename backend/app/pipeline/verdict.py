@@ -11,6 +11,8 @@ EVIDENCE_CHECKS = ("own_index", "fact_check", "youtube", "vision_web")
 # Reasons are shown to the public; technical detail stays in the report's checks list.
 CHECK_NAMES = {"own_index": "our database of known footage", "fact_check": "fact-check databases",
                "youtube": "YouTube", "vision_web": "reverse image search"}
+SOURCE_NAMES = {"own_index": "in our database of known footage", "youtube": "on YouTube",
+                "fact_check": "in a fact-check", "vision_web": "on the web"}
 
 
 @dataclass
@@ -47,7 +49,7 @@ def decide(settings: Settings, claim: Claim, evidence: list[Evidence], quality: 
     if debunks:
         best = max(e.relevance or 0 for e in debunks)
         conf = min(0.95, 0.55 + 0.3 * best + 0.05 * (len(debunks) - 1))
-        names = ", ".join(sorted({e.publisher or e.source for e in debunks}))
+        names = ", ".join(sorted({e.publisher or CHECK_NAMES.get(e.source, e.source) for e in debunks}))
         return Verdict(DEBUNKED, round(conf, 2), [
             f"{len(debunks)} fact-check(s) rated a matching claim as false or misleading ({names})."])
 
@@ -57,18 +59,20 @@ def decide(settings: Settings, claim: Claim, evidence: list[Evidence], quality: 
         score = _match_score(best)
         strong = [e for e in earlier if (e.similarity or 0) >= settings.strong_similarity
                   or (e.clip_similarity or 0) >= settings.clip_strong]
-        when = f"published {best.date}" if best.date else "seen earlier"
+        verb = "first seen" if best.source == "own_index" else "published"
+        when = f"{verb} {best.date}" if best.date else "seen earlier"
+        where = SOURCE_NAMES.get(best.source, best.source)
         undated = [] if claim.claimed_date or claim.recency != "none" else [
             "The reel does not say when this happened, so the footage being old may not contradict it."]
         if strong:
             conf = 0.6 + (min(score, 1.0) - settings.strong_similarity) * 3 + 0.08 * (len(strong) - 1)
             return Verdict(LIKELY_OLD_FOOTAGE, round(min(0.95, conf), 2), [
-                f"Footage {score:.0%} similar to the reel was {when} ({best.source}), "
+                f"Footage {score:.0%} similar to the reel was {when} {where}, "
                 f"before the date the reel claims.",
                 f"{len(strong)} independent earlier source(s) match strongly.", *undated])
         conf = 0.35 + (score - settings.weak_similarity) * 1.5
         return Verdict(LIKELY_OLD_FOOTAGE, round(min(0.5, conf), 2), [
-            f"Similar footage ({score:.0%}) was {when} ({best.source}); the match is not exact, "
+            f"Similar footage ({score:.0%}) was {when} {where}; the match is not exact, "
             "so this needs a manual look.", *undated])
 
     problems = quality.problems(settings)

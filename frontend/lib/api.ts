@@ -22,7 +22,7 @@ export interface Job {
 export interface Evidence {
   source: "fact_check" | "youtube" | "own_index" | "vision_web" | string;
   title: string;
-  url: string;
+  url?: string; // absent for footage seen in an early check that predates report links
   date?: string;
   similarity?: number;
   clip_similarity?: number;

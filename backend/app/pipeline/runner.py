@@ -126,7 +126,13 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
         evidence: list[Evidence] = []
         evidence += _run_check(checks, "own_index", lambda: own_index.lookup(ctx, claim, frames, info.sha256))
         evidence += _run_check(checks, "fact_check", lambda: factcheck_api.search(ctx, claim))
-        evidence += _run_check(checks, "youtube", lambda: youtube.search(ctx, claim, frames))
+        # Known footage matched strongly in our own index: save the YouTube / Vision quota.
+        known = any(e.source == "own_index" and (e.supports == "debunk" or (
+            e.supports == "earlier_footage" and (e.similarity or 0) >= s.strong_similarity)) for e in evidence)
+        if known:
+            checks.append(Check("youtube", "not_needed", "known footage matched in our index"))
+        else:
+            evidence += _run_check(checks, "youtube", lambda: youtube.search(ctx, claim, frames))
         if any(e.supports in ("debunk", "earlier_footage") for e in evidence):
             checks.append(Check("vision_web", "not_needed", "earlier evidence already found"))
         else:
@@ -144,7 +150,7 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
 
         out = (out_dir or s.output_dir / job_id)
         keyframes_saved, comparisons = report.save_visuals(ctx, out, frames, picked or frames[:3], evidence)
-        remembered = own_index.remember(ctx, frames, info.sha256)
+        fingerprint = own_index.remember(ctx, frames, info.sha256, job_id)
 
         partial = any(c.status in ("quota", "failed") for c in checks) or any(
             c.status == "skipped" for c in checks if c.name in ("fact_check", "youtube"))
@@ -172,7 +178,7 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
             "checks": [asdict(c) for c in checks],
             "partial": partial,
             "manual_links": report.manual_links(claim),
-            "fingerprint_saved": remembered,
+            "fingerprint": fingerprint,  # added | merged (sighting of known footage) | exists | none
             "disclaimer": report.DISCLAIMER,
             "seconds": round(time.monotonic() - started, 1),
         }

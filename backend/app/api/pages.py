@@ -17,6 +17,9 @@ from .deps import check_id, get_settings, get_store
 
 router = APIRouter()
 
+SOURCE_LABELS = {"fact_check": "Fact-check", "youtube": "YouTube", "own_index": "Known footage",
+                 "vision_web": "Web image match"}  # same wording as the frontend (lib/present.ts)
+
 # Neutral blue, never green, for "no contradiction": it is not a "real" stamp.
 VERDICT_TONE = {"DEBUNKED": "bad", "LIKELY_OLD_FOOTAGE": "warn", "NO_CONTRADICTION_FOUND": "info",
                 "UNVERIFIED": "muted"}
@@ -70,9 +73,11 @@ def _evidence_html(e: dict, match_threshold: float) -> str:
         bits.append(f"{sim:.0%} frame match" if sim >= match_threshold else "frames do not match")
     if e.get("rating"):
         bits.append("rated “" + escape(e["rating"]) + "”")
-    return (f'<div class="ev"><a href="{escape(e["url"])}" rel="nofollow noopener" target="_blank">'
-            f'{escape(e.get("title") or e["url"])}</a><span class="tag {role[1]}">{role[0]}</span>'
-            f'<div class="sub">{escape(e["source"])} · {" · ".join(bits)}</div></div>')
+    title = escape(e.get("title") or e.get("url") or SOURCE_LABELS.get(e["source"], e["source"]))
+    link = (f'<a href="{escape(e["url"])}" rel="nofollow noopener" target="_blank">{title}</a>'
+            if e.get("url") else f"<strong>{title}</strong>")
+    return (f'<div class="ev">{link}<span class="tag {role[1]}">{role[0]}</span>'
+            f'<div class="sub">{escape(SOURCE_LABELS.get(e["source"], e["source"]))} · {" · ".join(bits)}</div></div>')
 
 
 @router.get("/r/{report_id}", response_class=HTMLResponse)

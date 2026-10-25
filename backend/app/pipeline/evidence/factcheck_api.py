@@ -28,7 +28,8 @@ def claim_terms(claim: Claim) -> set[str]:
     return terms(" ".join([*claim.keywords, claim.event, claim.location]))
 
 
-def _query(ctx: Context, q: str) -> dict:
+def query(ctx: Context, q: str) -> dict:
+    """One cached, budgeted claims:search call."""
     key = f"fc:{normalize(q)}"
     cached = ctx.store.cache_get(key, ctx.settings.cache_ttl_days)
     if cached is not None:
@@ -51,7 +52,7 @@ def search(ctx: Context, claim: Claim) -> list[Evidence]:
     errors = []
     for q in queries[:3]:
         try:
-            data = _query(ctx, q)
+            data = query(ctx, q)
         except HttpError as exc:
             errors.append(str(exc))
             continue

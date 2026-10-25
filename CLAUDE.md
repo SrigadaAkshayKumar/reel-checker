@@ -1,8 +1,8 @@
 # Reel Fact-Checker
 
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
-`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-3 (pipeline + CLI) and 4
-(FastAPI + job queue) in `backend/`, Phase 5 (Next.js web app) in `frontend/`. Next: Phase 6, own index + real test reels.
+`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-3 (pipeline + CLI), 4 (FastAPI +
+job queue) and 6 (own index + seeding, `data/seed/README.md`) in `backend/`; 5 (Next.js) in `frontend/`. Next: Phase 7.
 
 ## Rules that define the product
 
@@ -44,3 +44,6 @@ npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright a
   API. Runtime values (dates, `navigator`) must not be read during prerender: use `useSyncExternalStore` with a
   server snapshot. The browser talks to the backend directly (`NEXT_PUBLIC_API_URL`); types in `frontend/lib/api.ts`
   mirror the backend JSON, so change both together. Same wording rules as the share page: plain, public, no internals.
+- Own index (`evidence/own_index.py`): a match needs one frame >= STRONG or two frames >= WEAK; the two-frame rule
+  stops chance matches in a large index. Never loosen it without re-running `test_large_index_does_not_match_by_chance`.
+  Seeds store hashes only (`pipeline/seeding.py`); never download videos from YouTube or Instagram.

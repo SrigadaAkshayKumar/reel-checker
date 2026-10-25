@@ -178,10 +178,11 @@ def to_markdown(report: dict) -> str:
     if report["evidence"]:
         lines += ["| Source | Item | Date | Similarity | Role |", "|---|---|---|---|---|"]
         for e in report["evidence"]:
-            title = (e.get("title") or e["url"]).replace("|", "/")[:90]
+            title = (e.get("title") or e.get("url") or e["source"]).replace("|", "/")[:90]
+            item = f"[{title}]({e['url']})" if e.get("url") else title
             sim = f"{e['similarity']:.0%}" if e.get("similarity") is not None else (e.get("rating") or "-")
             who = f"{e['source']}" + (f" ({e['publisher']})" if e.get("publisher") else "")
-            lines.append(f"| {who} | [{title}]({e['url']}) | {e.get('date') or '-'} | {sim} | {e['supports']} |")
+            lines.append(f"| {who} | {item} | {e.get('date') or '-'} | {sim} | {e['supports']} |")
     else:
         lines.append("Nothing found.")
     lines.append("")
@@ -215,7 +216,8 @@ def to_console(report: dict) -> str:
             rating = f" [{e['rating']}]" if e.get("rating") else ""
             out.append(f"  - {e['source']:<10} {e.get('date') or '----------'}{sim}{rating} "
                        f"{(e.get('title') or '')[:60]}")
-            out.append(f"    {e['url']}")
+            if e.get("url"):
+                out.append(f"    {e['url']}")
         out.append("")
     out.append("Checks: " + ", ".join(f"{c['name']}={c['status']}" for c in report["checks"]))
     return "\n".join(out)

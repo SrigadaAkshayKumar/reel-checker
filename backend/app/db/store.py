@@ -40,9 +40,14 @@ create table if not exists known_footage (
   fact_check_url text,
   phashes text not null,           -- JSON list of 16-char hex hashes
   video_hash text,
-  added_at text not null
+  added_at text not null,
+  times_seen integer not null default 1,  -- sightings of this footage (re-uploads merge here)
+  last_seen text,
+  report_id text,                  -- 'seen' rows: the report that first recorded this footage
+  embeddings blob                  -- optional CLIP embeddings (npy, float16, one row per hash)
 );
 create index if not exists known_footage_video on known_footage(video_hash);
+create index if not exists known_footage_source on known_footage(source_url);
 create table if not exists jobs (
   id text primary key,
   status text not null default 'queued',  -- queued | running | done | failed
@@ -105,6 +110,14 @@ class Store:
                 insert into reports select job_id, video_hash, verdict, report, created_at from reports_v0;
                 drop table reports_v0;
             """)
+        # v2 (Phase 6): sightings, link to the first report, CLIP embeddings.
+        footage = {r["name"] for r in self.db.execute("pragma table_info(known_footage)")}
+        if footage:
+            for col, decl in (("times_seen", "integer not null default 1"), ("last_seen", "text"),
+                              ("report_id", "text"), ("embeddings", "blob")):
+                if col not in footage:
+                    self.db.execute(f"alter table known_footage add column {col} {decl}")
+            self.db.commit()
 
     # --- cache -------------------------------------------------------------
     def cache_get(self, key: str, ttl_days: float) -> dict | list | None:
@@ -158,24 +171,48 @@ class Store:
 
     # --- known footage -----------------------------------------------------
     def footage_add(self, *, kind: str, phashes: list[str], source_url: str = "",
-                    first_seen: str | None = None, claim_note: str = "",
-                    fact_check_url: str = "", video_hash: str = "") -> int:
+                    first_seen: str | None = None, claim_note: str = "", fact_check_url: str = "",
+                    video_hash: str = "", report_id: str = "", embeddings: bytes | None = None) -> int:
         cur = self.db.execute(
-            "insert into known_footage (kind, source_url, first_seen, claim_note, fact_check_url,"
-            " phashes, video_hash, added_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
-            (kind, source_url, first_seen, claim_note, fact_check_url,
-             json.dumps(phashes), video_hash, _now()))
+            "insert into known_footage (kind, source_url, first_seen, claim_note, fact_check_url, phashes,"
+            " video_hash, added_at, last_seen, report_id, embeddings) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (kind, source_url, first_seen, claim_note, fact_check_url, json.dumps(phashes), video_hash, _now(),
+             first_seen, report_id, embeddings))
         self.db.commit()
         return cur.lastrowid
+
+    def footage_touch(self, footage_id: int, seen_on: str) -> None:
+        """Another sighting of known footage: count it instead of storing a near-duplicate."""
+        self.db.execute("update known_footage set times_seen = times_seen + 1, last_seen = ? where id = ?",
+                        (seen_on, footage_id))
+        self.db.commit()
+
+    def footage_remove(self, footage_id: int) -> bool:
+        cur = self.db.execute("delete from known_footage where id = ?", (footage_id,))
+        self.db.commit()
+        return cur.rowcount > 0
 
     def footage_has_video(self, video_hash: str) -> bool:
         return self.db.execute("select 1 from known_footage where video_hash = ?",
                                (video_hash,)).fetchone() is not None
 
-    def footage_all(self) -> list[dict]:
-        rows = self.db.execute("select * from known_footage order by id").fetchall()
+    def footage_by_source(self, source_url: str) -> int | None:
+        row = self.db.execute("select id from known_footage where source_url = ? and source_url != ''",
+                              (source_url,)).fetchone()
+        return row["id"] if row else None
+
+    def footage_version(self) -> tuple[int, int]:
+        """Changes whenever rows are added or removed (cache key for the in-memory index)."""
+        row = self.db.execute("select count(*) as n, coalesce(max(id), 0) as m from known_footage").fetchone()
+        return row["n"], row["m"]
+
+    def footage_all(self, kind: str | None = None, with_embeddings: bool = False) -> list[dict]:
+        cols = "*" if with_embeddings else ", ".join(
+            c for c in ("id", "kind", "source_url", "first_seen", "claim_note", "fact_check_url", "phashes",
+                        "video_hash", "added_at", "times_seen", "last_seen", "report_id"))
+        sql = f"select {cols} from known_footage" + (" where kind = ?" if kind else "") + " order by id"
         out = []
-        for r in rows:
+        for r in self.db.execute(sql, (kind,) if kind else ()):
             d = dict(r)
             d["phashes"] = json.loads(d["phashes"])
             out.append(d)

@@ -24,7 +24,11 @@ function EvidenceItem({ e }: { e: Evidence }) {
   return (
     <li className={styles.evidence}>
       <div className={styles.evidenceHead}>
-        <a href={e.url} target="_blank" rel="nofollow noopener noreferrer">{e.title || e.url}</a>
+        {e.url ? (
+          <a href={e.url} target="_blank" rel="nofollow noopener noreferrer">{e.title || e.url}</a>
+        ) : (
+          <strong>{e.title || SOURCE_LABELS[e.source] || e.source}</strong>
+        )}
         <span className={`tag tone-${role.tone}`}>{role.label}</span>
       </div>
       <p className="sub small">{meta.join(" · ")}</p>
@@ -104,11 +108,11 @@ export default function ReportView({ report: r, shareUrl }: { report: Report; sh
       <section className="card" aria-labelledby="evidence">
         <h2 id="evidence">Evidence</h2>
         {strong.length === 0 && leads.length === 0 && <p className="sub">No related sources were found.</p>}
-        {strong.length > 0 && <ul className={styles.evidenceList}>{strong.map((e) => <EvidenceItem key={e.url + e.source} e={e} />)}</ul>}
+        {strong.length > 0 && <ul className={styles.evidenceList}>{strong.map((e, i) => <EvidenceItem key={`${e.source}-${i}`} e={e} />)}</ul>}
         {leads.length > 0 && (
           <details className={styles.leads} open={strong.length === 0}>
             <summary>{leads.length} related result{leads.length > 1 ? "s" : ""} that don&apos;t match</summary>
-            <ul className={styles.evidenceList}>{leads.map((e) => <EvidenceItem key={e.url + e.source} e={e} />)}</ul>
+            <ul className={styles.evidenceList}>{leads.map((e, i) => <EvidenceItem key={`${e.source}-${i}`} e={e} />)}</ul>
           </details>
         )}
       </section>

@@ -19,9 +19,10 @@ full plan: [`docs/workflow.md`](docs/workflow.md).
 
 ## Status
 
-Phases 1-5 of the plan: the analysis pipeline (CLI), the FastAPI backend with a job queue, and the Next.js
-web app (`frontend/`, see [`frontend/README.md`](frontend/README.md)). Next: the own index of known footage and
-testing on real reels (Phase 6), then deployment.
+Phases 1-6 of the plan: the analysis pipeline (CLI), the FastAPI backend with a job queue, the Next.js
+web app (`frontend/`, see [`frontend/README.md`](frontend/README.md)), and the own index of known footage with
+seeding tools ([`data/seed/README.md`](data/seed/README.md)). Next: testing on real reels and tuning thresholds
+(Phase 7), then deployment.
 
 ## Quick start
 
@@ -44,9 +45,10 @@ Other commands:
 ```bash
 python run.py reel.mp4 --json            # full report JSON on stdout
 python run.py reel.mp4 --fresh           # ignore the cached report for this exact file
-python run.py index add old.mp4 --first-seen 2016-07-01 --source-url URL --note "..." [--fact-check URL]
-python run.py index import ../data/seed/known_footage.json
-python run.py index list
+python run.py index harvest              # fact-checks rated false → candidates CSV to fill in
+python run.py index import ../data/seed/candidates.csv
+python run.py index add-youtube URL --note "..." [--fact-check URL]   # thumbnails only, nothing downloaded
+python run.py index list | stats | export pack.json | remove ID
 python run.py quota                      # today's free-tier usage
 pytest -q && ruff check .                # tests (no network, no keys needed)
 ```
@@ -118,7 +120,8 @@ reel.mp4 ─ ffprobe/ffmpeg ─ keyframes (even sweep + scene changes, de-duplic
         ─ Gemini: one call with caption + transcript + OCR + 5 frames (+ audio if needed)
                   → claim, claimed date, YouTube queries describing the VISIBLE footage, fact-check queries
         ─ evidence, cheapest first:
-            1. own index      pHash match against known debunked footage + every reel checked before
+            1. own index      known debunked footage + every reel checked before (vectorised pHash,
+                              optional CLIP); a strong match skips the YouTube / Vision quota
             2. Fact Check     Google Fact Check Tools claims:search, rating + relevance gate
             3. YouTube        search.list with publishedBefore = claimed date; hash each result's thumbnail
                               and its 3 auto frame grabs against the reel's keyframes (images only, no video)
