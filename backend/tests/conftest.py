@@ -134,7 +134,7 @@ def no_whisper(monkeypatch):
 def settings(tmp_path) -> Settings:
     return Settings(gemini_api_key="test-gemini", google_api_key="test-google",
                     data_dir=tmp_path / "data", db_path=tmp_path / "data" / "test.sqlite",
-                    output_dir=tmp_path / "out", ocr_engine="gemini")
+                    uploads_dir=tmp_path / "data" / "uploads", output_dir=tmp_path / "out", ocr_engine="gemini")
 
 
 @pytest.fixture

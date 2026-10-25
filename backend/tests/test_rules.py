@@ -45,7 +45,8 @@ def test_no_external_checks_is_unverified_not_clean(settings):
               Check("youtube", "skipped", "no key"), Check("vision_web", "skipped", "no key")]
     v = decide(settings, CLAIM, [], GOOD, checks)
     assert v.verdict == UNVERIFIED and v.confidence == 0
-    assert "fact_check (used up)" in v.reasons[0]
+    assert "could not run" in v.reasons[0]
+    assert "used up" not in " ".join(v.reasons) and "fact_check" not in " ".join(v.reasons)
 
 
 def test_nothing_found_is_no_contradiction(settings):

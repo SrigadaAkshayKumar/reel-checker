@@ -8,6 +8,9 @@ from ..core.config import Settings
 from .models import DEBUNKED, LIKELY_OLD_FOOTAGE, NO_CONTRADICTION_FOUND, UNVERIFIED, Check, Claim, Evidence
 
 EVIDENCE_CHECKS = ("own_index", "fact_check", "youtube", "vision_web")
+# Reasons are shown to the public; technical detail stays in the report's checks list.
+CHECK_NAMES = {"own_index": "our database of known footage", "fact_check": "fact-check databases",
+               "youtube": "YouTube", "vision_web": "reverse image search"}
 
 
 @dataclass
@@ -77,13 +80,13 @@ def decide(settings: Settings, claim: Claim, evidence: list[Evidence], quality: 
     ran = [c for c in checks if c.name in EVIDENCE_CHECKS and c.status == "ok"]
     external = [c for c in ran if c.name != "own_index"]
     if not external:
-        not_run = [f"{c.name} ({c.detail})" for c in checks if c.name in EVIDENCE_CHECKS and c.status != "ok"]
         return Verdict(UNVERIFIED, 0.0, [
-            "No external evidence search could run: " + "; ".join(not_run) + ".",
+            "The searches for earlier copies and fact-checks could not run this time "
+            "(service limits or setup), so there is nothing to judge by.",
             "Use the manual-check links below."])
 
     coverage = len(ran) / len(EVIDENCE_CHECKS)
     return Verdict(NO_CONTRADICTION_FOUND, round(0.2 + 0.4 * coverage, 2), [
-        "No earlier copy of this footage and no fact-check of this claim was found in: "
-        + ", ".join(c.name for c in ran) + ".",
+        "No earlier copy of this footage and no fact-check of this claim was found in "
+        + ", ".join(CHECK_NAMES[c.name] for c in ran) + ".",
         "This is not proof the reel is genuine; it may simply not be indexed yet."])

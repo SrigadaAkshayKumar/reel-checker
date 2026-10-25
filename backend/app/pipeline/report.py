@@ -62,11 +62,8 @@ def _evidence_lines(evidence: list[Evidence]) -> str:
 
 
 def template_summary(verdict: Verdict, claim: Claim, evidence: list[Evidence]) -> str:
-    label = VERDICT_LABELS[verdict.verdict]
-    lines = [f"Verdict: {label}."]
-    if claim.claim_text:
-        lines.append(f"The reel claims: {claim.claim_text}")
-    lines += verdict.reasons
+    """Used without Gemini. The verdict and claim are shown next to it everywhere, so not repeated."""
+    lines = list(verdict.reasons)
     top = [e for e in evidence if e.supports in ("debunk", "earlier_footage")][:2]
     for e in top:
         lines.append(f"See: {e.title} ({e.url})")
@@ -111,8 +108,9 @@ def manual_links(claim: Claim) -> list[dict]:
 
 
 def side_by_side(reel_frame: str, other: bytes, label_left: str, label_right: str, out: Path) -> Path:
-    left = Image.open(reel_frame).convert("RGB")
-    right = fp.open_image(other)
+    # Trim letterbox bars so the two pieces of footage sit at the same size.
+    left = fp.content_box(Image.open(reel_frame).convert("RGB"))
+    right = fp.content_box(fp.open_image(other))
     h = 360
     left = left.resize((max(1, int(left.width * h / left.height)), h))
     right = right.resize((max(1, int(right.width * h / right.height)), h))

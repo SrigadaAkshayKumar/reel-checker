@@ -1,7 +1,8 @@
 # Reel Fact-Checker
 
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
-`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Currently Phases 1-3 (CLI pipeline in `backend/`).
+`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done in `backend/`: Phases 1-3 (pipeline +
+CLI) and Phase 4 (FastAPI + job queue + share page). Next: Phase 5, the Next.js frontend.
 
 ## Rules that define the product
 
@@ -21,6 +22,7 @@ Checks whether an Instagram reel (a user-supplied file) shows old footage passed
 cd backend
 pytest -q && ruff check .     # must pass before every commit; no network or keys needed
 python run.py <video> [--caption ...] [--posted YYYY-MM-DD]
+uvicorn app.main:app --port 8000   # API + share page + upload page, embedded worker
 ```
 
 - Settings and thresholds live only in `app/core/config.py` (env-overridable). Tune thresholds on test reels.
@@ -30,3 +32,7 @@ python run.py <video> [--caption ...] [--posted YYYY-MM-DD]
 - Tokenise Indic text with `app/pipeline/text.py`, not regex `\w` (it drops Telugu/Hindi vowel signs).
 - New evidence source: `app/pipeline/evidence/<name>.py` returning `list[Evidence]` (raise `SkipCheck` to skip),
   wired into `runner.py`, added to `EVIDENCE_CHECKS` in `verdict.py`, with a faked-API test.
+- API: routes in `app/api/routes.py` return `views.public_*` shapes (no server paths). Errors are
+  `HTTPException(status, {"code", "message"})` with a user-facing message. Report ids are the job ids (12 hex).
+- The worker must always delete the upload (`finally`) and must never put exception text in a job's `error`.
+- Share-page text is public: no internal check names, env vars or stack details. Those stay in `checks`.

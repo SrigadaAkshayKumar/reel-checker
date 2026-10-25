@@ -44,10 +44,11 @@ def _run_check(checks: list[Check], name: str, fn: Callable[[], list[Evidence]])
 
 def analyze(video: Path, settings: Settings, *, caption: str = "", posted_date: date | None = None,
             http: Http | None = None, store: Store | None = None, fresh: bool = False,
-            keep_work: bool = False, out_dir: Path | None = None,
+            keep_work: bool = False, out_dir: Path | None = None, job_id: str | None = None,
             progress: Callable[[str], None] | None = None) -> dict:
     """Raises extract.InputError for unusable uploads; everything else degrades
-    into a (possibly partial) report."""
+    into a (possibly partial) report. `job_id` becomes the report id (the API
+    passes its job id); a cached report keeps its original id."""
     started = time.monotonic()
     http = http or Http()
     own_store = store is None
@@ -61,16 +62,19 @@ def analyze(video: Path, settings: Settings, *, caption: str = "", posted_date: 
             if cached and not cached.get("partial") and not caption:
                 cached["cached"] = True
                 return cached
-        return _analyze(ctx, info, caption, keep_work, out_dir, step, started)
+        return _analyze(ctx, info, caption, keep_work, out_dir, step, started, job_id or new_id())
     finally:
         if own_store:
             store.close()
 
 
+def new_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | None,
-             step: Callable[[str], None], started: float) -> dict:
+             step: Callable[[str], None], started: float, job_id: str) -> dict:
     s = ctx.settings
-    job_id = uuid.uuid4().hex[:12]
     checks: list[Check] = []
     work = Path(tempfile.mkdtemp(prefix="reel-"))
     try:

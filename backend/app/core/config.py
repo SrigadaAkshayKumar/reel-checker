@@ -82,6 +82,18 @@ class Settings:
     llm_summary: bool = True
     vision_enabled: bool = True
 
+    # API server (Phase 4)
+    uploads_dir: Path = REPO_ROOT / "data" / "uploads"   # deleted after each analysis
+    rate_limit_per_day: int = 10        # new analyses per client IP per day; cached results are free
+    trust_proxy: bool = False           # read the client IP from X-Forwarded-For (behind Caddy/Cloudflare)
+    ip_hash_salt: str = ""              # IPs are only stored salted+hashed; generated into data_dir if empty
+    cors_origins: str = ""              # comma-separated, e.g. https://reelcheck.example
+    public_base_url: str = ""           # absolute URLs in share-page previews (WhatsApp, X)
+    embedded_worker: bool = True        # run the worker inside the API process (single free VM)
+    worker_poll_seconds: float = 1.0
+    job_stale_seconds: int = 600        # a 'running' job older than this is assumed dead
+    job_max_attempts: int = 2
+
     @property
     def factcheck_key(self) -> str:
         return self.factcheck_api_key or self.google_api_key
@@ -113,7 +125,8 @@ def load_settings(env_file: Path | None = None, **overrides) -> Settings:
             values[f.name] = Path(raw).expanduser()
         else:
             values[f.name] = raw
-    if "data_dir" in values and "db_path" not in values:
-        values["db_path"] = values["data_dir"] / "reel-checker.sqlite"
+    if "data_dir" in values:
+        values.setdefault("db_path", values["data_dir"] / "reel-checker.sqlite")
+        values.setdefault("uploads_dir", values["data_dir"] / "uploads")
     values.update(overrides)
     return Settings(**values)

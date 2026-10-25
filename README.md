@@ -19,7 +19,8 @@ full plan: [`docs/workflow.md`](docs/workflow.md).
 
 ## Status
 
-Phases 1-3 of the plan: a command-line pipeline. The FastAPI backend and Next.js frontend come next.
+Phases 1-4 of the plan: the analysis pipeline (CLI) and the FastAPI backend with a job queue, a shareable
+report page and a minimal upload page. The Next.js frontend (Phase 5) comes next.
 
 ## Quick start
 
@@ -28,7 +29,7 @@ Needs Python 3.11+ and ffmpeg.
 ```bash
 cd backend
 python -m venv ../.venv && source ../.venv/bin/activate
-pip install -r requirements-dev.txt          # core: requests, numpy, pillow (+ pytest, ruff)
+pip install -r requirements-dev.txt          # requests, numpy, pillow, fastapi (+ pytest, ruff)
 cp ../.env.example ../.env                   # then add your keys
 
 python run.py reel.mp4 --caption "Plane crash today at Hyderabad" --posted 2026-10-24
@@ -48,6 +49,38 @@ python run.py index list
 python run.py quota                      # today's free-tier usage
 pytest -q && ruff check .                # tests (no network, no keys needed)
 ```
+
+## API server
+
+```bash
+cd backend
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Open http://localhost:8000 for the upload page. Interactive API docs are at `/docs`. One worker thread runs
+inside the server (`EMBEDDED_WORKER=true`), which is enough for a single free VM. To scale, set it to `false`
+and run one or more `python -m app.worker` processes against the same database. Claiming a job is atomic.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/analyze` | multipart `file` (+ optional `caption`, `posted_date` YYYY-MM-DD). `202` with a queued job, or `200` with `cached: true` when this exact file was already checked |
+| GET | `/api/jobs/{id}` | `queued` (with `queue_position`) → `running` (with `step`: extracting, transcribing, understanding, searching, comparing) → `done` / `failed` (with a user-facing `error`) |
+| GET | `/api/reports/{id}` | report JSON, with `share_url` and image URLs |
+| GET | `/api/reports/{id}/files/{name}` | side-by-side comparison images and keyframes |
+| POST | `/api/reports/{id}/feedback` | `{"correct": true/false, "note": "..."}`: "Was this correct?" / report an error |
+| GET | `/r/{id}` | public share page, mobile-first, with WhatsApp preview tags and a share button |
+| GET | `/api/health` | status, queue length, which keys are configured (never their values) |
+
+Errors come back as `{"detail": {"code": "...", "message": "..."}}`: `not_video` 415, `too_large` 413,
+`bad_video` 400 (corrupt, or over `MAX_VIDEO_SECONDS`), `bad_date` / `caption_too_long` 422, `rate_limited` 429.
+
+Limits and privacy:
+- Uploads up to `MAX_UPLOAD_MB` (50) and `MAX_VIDEO_SECONDS` (90), checked before queueing.
+- `RATE_LIMIT_PER_DAY` (10) new analyses per client. Cached answers don't count.
+- Client IPs are stored only as salted hashes. Behind Caddy or Cloudflare, set `TRUST_PROXY=true`.
+- The uploaded video is deleted as soon as its analysis finishes or fails. Kept: fingerprints, the report,
+  and the small keyframe and comparison images the share page shows.
+- A job left `running` by a crashed worker is requeued once, then failed with a "try again" message.
 
 ## Keys
 
@@ -100,11 +133,15 @@ on real test reels.
 ```
 backend/
   run.py                    CLI
+  app/main.py               FastAPI app (uvicorn app.main:app)
+  app/api/                  routes (JSON API), pages (share page + upload page), views, deps
+  app/worker.py             job runner (embedded thread or `python -m app.worker`)
   app/core/                 config (.env), HTTP client (keys redacted from errors)
-  app/db/store.py           SQLite: api_cache, quota, reports, known_footage (mirrors the Postgres schema)
+  app/db/store.py           SQLite: api_cache, quota, reports, known_footage, jobs, rate_limit, feedback
+                            (mirrors the Postgres schema)
   app/pipeline/             extract, transcribe, ocr, llm (Gemini), claims, fingerprint, clip,
                             evidence/{own_index,factcheck_api,youtube,vision_web}, verdict, report, runner
-  tests/                    synthetic reels via ffmpeg; every external API faked
+  tests/                    synthetic reels via ffmpeg; every external API faked; API via TestClient
 data/seed/                  how to seed known debunked footage
 docs/                       project overview + full workflow
 ```
