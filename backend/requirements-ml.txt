@@ -1,0 +1,9 @@
+# Optional local models. Without these the pipeline still works: Gemini
+# transcribes and reads on-screen text from the frames it already gets.
+# Models download from Hugging Face on first use (~150 MB Whisper base,
+# ~500 MB small, ~100 MB EasyOCR, ~600 MB CLIP).
+-r requirements.txt
+faster-whisper>=1.0
+easyocr>=1.7
+# CLIP re-scoring of near-miss frame matches; enable with USE_CLIP=true
+open-clip-torch>=2.24

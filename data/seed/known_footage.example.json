@@ -1,0 +1,9 @@
+[
+  {
+    "source_url": "https://www.youtube.com/watch?v=EXAMPLE",
+    "first_seen": "2016-07-01",
+    "claim_note": "Example entry: replace with real debunked footage. Hashes come from `python run.py index add`.",
+    "fact_check_url": "https://example.org/fact-check",
+    "phashes": ["c3d1a4b2e5f60718"]
+  }
+]

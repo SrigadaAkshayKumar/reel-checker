@@ -1,0 +1,110 @@
+# Reel Fact-Checker
+
+Tells you whether a reel shows what it claims, or old footage passed off as news.
+You give it the video file; it gives back an evidence report:
+
+1. **What the reel claims**: event, place and date, from the caption, speech (Telugu / Hindi / English) and on-screen text.
+2. **Where the footage really comes from**: earlier copies, existing fact-checks.
+3. **A verdict** with confidence, sources and side-by-side frames.
+
+| Verdict | Meaning |
+|---|---|
+| `DEBUNKED` | A fact-checker has already rated this claim false or misleading |
+| `LIKELY_OLD_FOOTAGE` | The same or very similar footage was published before the claimed date |
+| `NO_CONTRADICTION_FOUND` | Nothing earlier found. **Not** proof it is real |
+| `UNVERIFIED` | Not enough to judge (too short/dark, no claim, or no evidence search could run) |
+
+It never says a reel is "100% real", and it never accuses a person. Background: [`docs/project-overview.md`](docs/project-overview.md),
+full plan: [`docs/workflow.md`](docs/workflow.md).
+
+## Status
+
+Phases 1-3 of the plan: a command-line pipeline. The FastAPI backend and Next.js frontend come next.
+
+## Quick start
+
+Needs Python 3.11+ and ffmpeg.
+
+```bash
+cd backend
+python -m venv ../.venv && source ../.venv/bin/activate
+pip install -r requirements-dev.txt          # core: requests, numpy, pillow (+ pytest, ruff)
+cp ../.env.example ../.env                   # then add your keys
+
+python run.py reel.mp4 --caption "Plane crash today at Hyderabad" --posted 2026-10-24
+```
+
+Output goes to `output/<job_id>/`: `report.md`, `report.json`, `compare_*.jpg` (reel frame next to the
+earlier match) and `frames/` (keyframes to upload to Google Lens / Yandex by hand).
+
+Other commands:
+
+```bash
+python run.py reel.mp4 --json            # full report JSON on stdout
+python run.py reel.mp4 --fresh           # ignore the cached report for this exact file
+python run.py index add old.mp4 --first-seen 2016-07-01 --source-url URL --note "..." [--fact-check URL]
+python run.py index import ../data/seed/known_footage.json
+python run.py index list
+python run.py quota                      # today's free-tier usage
+pytest -q && ruff check .                # tests (no network, no keys needed)
+```
+
+## Keys
+
+| Key | Used for | Without it |
+|---|---|---|
+| `GEMINI_API_KEY` ([AI Studio](https://aistudio.google.com/apikey)) | Claim extraction, transcription when Whisper is missing or unsure, on-screen text, summary | Keyword heuristic from the caption; no speech/OCR unless local models are installed |
+| `GOOGLE_API_KEY` (Cloud Console) with **Fact Check Tools API**, **YouTube Data API v3**, **Cloud Vision API** enabled | Existing fact-checks, earlier uploads, reverse image search | Those checks are skipped and the report is marked partial |
+
+Cloud Vision needs billing enabled on the project, even within its 1,000 free units a month. Leave it off with
+`VISION_ENABLED=false` if you prefer. Free-tier limits change, so check current quotas in AI Studio and the Cloud Console.
+The app enforces its own budgets (`GEMINI_DAILY_LIMIT`, `YOUTUBE_DAILY_UNITS`, ...) and caches every response.
+
+**Privacy:** Gemini's free tier may use prompts to improve Google's models, so keyframes and audio sent for
+claim extraction fall under that. For sensitive material, use a paid key or local models.
+
+## Optional local models
+
+```bash
+pip install -r requirements-ml.txt       # faster-whisper, EasyOCR, open_clip (+ torch)
+```
+
+- **faster-whisper** `base`, then `small` when confidence is low. If it's still unsure (common on Telugu), the audio goes to Gemini.
+- **EasyOCR** reads English + Hindi + Telugu on-screen text. `tesseract` is used if it's installed instead.
+- **CLIP** (`USE_CLIP=true`) re-scores near-miss frame matches that pHash misses (heavy crops, overlays).
+
+## How it works
+
+```
+reel.mp4 ─ ffprobe/ffmpeg ─ keyframes (even sweep + scene changes, de-duplicated, ≤12) + 16 kHz audio
+        ─ faster-whisper / EasyOCR (if installed)
+        ─ Gemini: one call with caption + transcript + OCR + 5 frames (+ audio if needed)
+                  → claim, claimed date, YouTube queries describing the VISIBLE footage, fact-check queries
+        ─ evidence, cheapest first:
+            1. own index      pHash match against known debunked footage + every reel checked before
+            2. Fact Check     Google Fact Check Tools claims:search, rating + relevance gate
+            3. YouTube        search.list with publishedBefore = claimed date; hash each result's thumbnail
+                              and its 3 auto frame grabs against the reel's keyframes (images only, no video)
+            4. Vision Web     only when 1-3 found nothing: pages with matching images (leads, no dates)
+        ─ verdict rules (backend/app/pipeline/verdict.py), then a Gemini summary grounded in that evidence
+        ─ report.json / report.md / side-by-side images; the work dir is deleted, fingerprints are kept
+```
+
+Fingerprints are 64-bit pHashes of each frame's *content box* (letterbox bars trimmed), plus mirrored,
+centre-crop and middle-16:9-band variants. So a landscape clip inside a 9:16 reel with caption strips still
+matches the original upload's thumbnail. Thresholds: ≥ 0.90 strong, ≥ 0.80 weak (low confidence). Tune them
+on real test reels.
+
+## Layout
+
+```
+backend/
+  run.py                    CLI
+  app/core/                 config (.env), HTTP client (keys redacted from errors)
+  app/db/store.py           SQLite: api_cache, quota, reports, known_footage (mirrors the Postgres schema)
+  app/pipeline/             extract, transcribe, ocr, llm (Gemini), claims, fingerprint, clip,
+                            evidence/{own_index,factcheck_api,youtube,vision_web}, verdict, report, runner
+  tests/                    synthetic reels via ffmpeg; every external API faked
+data/seed/                  how to seed known debunked footage
+docs/                       project overview + full workflow
+```

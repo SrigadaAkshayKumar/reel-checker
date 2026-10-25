@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# data: never commit media, databases or reports
+data/*.sqlite
+data/*.sqlite-*
+data/samples/*
+!data/samples/.gitkeep
+output/
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.wav
+*.mp3
