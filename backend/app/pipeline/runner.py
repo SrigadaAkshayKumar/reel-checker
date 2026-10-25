@@ -18,7 +18,7 @@ from ..core.http import Http
 from ..db.store import Store
 from . import extract, ocr, report, transcribe
 from .claims import extract_claim
-from .context import Context, SkipCheck
+from .context import Context, SkipCheck, claim_cutoff
 from .evidence import factcheck_api, own_index, vision_web, youtube
 from .llm import Gemini
 from .models import VERDICT_LABELS, Check, Evidence, Transcript
@@ -45,7 +45,7 @@ def _run_check(checks: list[Check], name: str, fn: Callable[[], list[Evidence]])
 def analyze(video: Path, settings: Settings, *, caption: str = "", posted_date: date | None = None,
             http: Http | None = None, store: Store | None = None, fresh: bool = False,
             keep_work: bool = False, out_dir: Path | None = None, job_id: str | None = None,
-            progress: Callable[[str], None] | None = None) -> dict:
+            progress: Callable[[str], None] | None = None, remember: bool = True) -> dict:
     """Raises extract.InputError for unusable uploads; everything else degrades
     into a (possibly partial) report. `job_id` becomes the report id (the API
     passes its job id); a cached report keeps its original id."""
@@ -62,7 +62,7 @@ def analyze(video: Path, settings: Settings, *, caption: str = "", posted_date: 
             if cached and not cached.get("partial") and not caption:
                 cached["cached"] = True
                 return cached
-        return _analyze(ctx, info, caption, keep_work, out_dir, step, started, job_id or new_id())
+        return _analyze(ctx, info, caption, keep_work, out_dir, step, started, job_id or new_id(), remember)
     finally:
         if own_store:
             store.close()
@@ -73,7 +73,7 @@ def new_id() -> str:
 
 
 def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | None,
-             step: Callable[[str], None], started: float, job_id: str) -> dict:
+             step: Callable[[str], None], started: float, job_id: str, remember: bool = True) -> dict:
     s = ctx.settings
     checks: list[Check] = []
     work = Path(tempfile.mkdtemp(prefix="reel-"))
@@ -129,7 +129,7 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
         # Known footage matched strongly in our own index: save the YouTube / Vision quota.
         known = any(e.source == "own_index" and (e.supports == "debunk" or (
             e.supports == "earlier_footage" and (e.similarity or 0) >= s.strong_similarity)) for e in evidence)
-        if known:
+        if known and s.index_short_circuit:
             checks.append(Check("youtube", "not_needed", "known footage matched in our index"))
         else:
             evidence += _run_check(checks, "youtube", lambda: youtube.search(ctx, claim, frames))
@@ -150,7 +150,7 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
 
         out = (out_dir or s.output_dir / job_id)
         keyframes_saved, comparisons = report.save_visuals(ctx, out, frames, picked or frames[:3], evidence)
-        fingerprint = own_index.remember(ctx, frames, info.sha256, job_id)
+        fingerprint = own_index.remember(ctx, frames, info.sha256, job_id) if remember else "not saved"
 
         partial = any(c.status in ("quota", "failed") for c in checks) or any(
             c.status == "skipped" for c in checks if c.name in ("fact_check", "youtube"))
@@ -163,6 +163,8 @@ def _analyze(ctx: Context, info, caption: str, keep_work: bool, out_dir: Path | 
                       "height": info.height, "has_audio": info.has_audio, "size_bytes": info.size_bytes},
             "caption": caption,
             "claim": asdict(claim),
+            "cutoff_date": claim_cutoff(ctx, claim).isoformat(),  # evidence before this predates the claim
+            "quality": asdict(quality),
             "transcript": asdict(transcript) if transcript else None,
             "onscreen_text": ocr_lines or [],
             "verdict": verdict.verdict,

@@ -73,10 +73,11 @@ class Claim:
 class Evidence:
     source: str             # fact_check | youtube | own_index | vision_web
     title: str
-    url: str
+    url: str = ""
     date: str | None = None          # ISO date the item was published / first seen
     similarity: float | None = None  # best pHash similarity to a reel keyframe
     clip_similarity: float | None = None
+    frames_matching: int | None = None  # reel keyframes at or above the weak threshold
     matched_frame: int | None = None
     publisher: str = ""
     rating: str = ""

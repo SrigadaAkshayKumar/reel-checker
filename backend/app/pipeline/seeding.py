@@ -81,7 +81,7 @@ def from_images(ctx: Context, sources: list[str]) -> tuple[list[str], list]:
         except (HttpError, OSError) as exc:
             raise SeedError(f"cannot read image {src}: {exc}") from None
     usable = [im for im in images if fp.image_stats(im)[1] >= 8.0]
-    return [fp.phash(fp.content_box(im)) for im in usable], usable
+    return [h for im in usable for h in fp.stored_hashes(im)], usable
 
 
 def from_youtube(ctx: Context, video_id: str) -> tuple[list[str], list, str | None, str]:
@@ -106,7 +106,7 @@ def from_youtube(ctx: Context, video_id: str) -> tuple[list[str], list, str | No
                 title = items[0]["snippet"].get("title", "")
         except HttpError:
             pass
-    return [fp.phash(fp.content_box(im)) for im in usable], usable, published, title
+    return [h for im in usable for h in fp.stored_hashes(im)], usable, published, title
 
 
 def from_video(ctx: Context, path: Path) -> tuple[list[str], list]:
@@ -119,7 +119,7 @@ def from_video(ctx: Context, path: Path) -> tuple[list[str], list]:
         frames = extract.keyframes(path, info, Path(tmp), max_frames=24, scene_threshold=s.scene_threshold)
         usable = [k for k in frames if k.usable]
         images = [fp.open_image(k.path) for k in usable] if s.use_clip else []
-    return [k.phash for k in usable], images
+    return [h for k in usable for h in fp.stored_from_variants(k.variants)], images
 
 
 def add_entry(ctx: Context, entry: dict, base_dir: Path | None = None) -> tuple[int | None, str]:

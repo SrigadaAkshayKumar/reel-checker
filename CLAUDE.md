@@ -2,7 +2,8 @@
 
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
 `docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-3 (pipeline + CLI), 4 (FastAPI +
-job queue) and 6 (own index + seeding, `data/seed/README.md`) in `backend/`; 5 (Next.js) in `frontend/`. Next: Phase 7.
+job queue), 6 (own index + seeding) and 7 (eval / bench / review, `data/eval/README.md`) in `backend/`; 5 (Next.js) in
+`frontend/`. Next: Phase 8, deployment.
 
 ## Rules that define the product
 
@@ -47,3 +48,6 @@ npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright a
 - Own index (`evidence/own_index.py`): a match needs one frame >= STRONG or two frames >= WEAK; the two-frame rule
   stops chance matches in a large index. Never loosen it without re-running `test_large_index_does_not_match_by_chance`.
   Seeds store hashes only (`pipeline/seeding.py`); never download videos from YouTube or Instagram.
+- Evidence is classified only in `pipeline/scoring.py` (sources and `run.py eval` both call it). Never decide
+  `supports` inline in a source module, or the threshold sweep stops matching production. Threshold changes go in
+  `.env` and should come from an eval run, not a guess.

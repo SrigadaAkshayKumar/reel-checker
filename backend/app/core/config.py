@@ -81,6 +81,7 @@ class Settings:
     # Feature switches
     llm_summary: bool = True
     vision_enabled: bool = True
+    index_short_circuit: bool = True  # strong own-index match skips YouTube / Vision (eval turns it off)
 
     # API server (Phase 4)
     uploads_dir: Path = REPO_ROOT / "data" / "uploads"   # deleted after each analysis

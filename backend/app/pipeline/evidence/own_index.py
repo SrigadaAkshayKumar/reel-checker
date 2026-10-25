@@ -19,13 +19,15 @@ from __future__ import annotations
 import io
 import threading
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
+from math import comb
 
 import numpy as np
 
 from .. import fingerprint as fp
 from ..context import Context, claim_cutoff
 from ..models import Claim, Evidence, Keyframe
+from ..scoring import DEBUNKED_FOOTAGE, Thresholds, classify
 
 
 @dataclass
@@ -128,6 +130,23 @@ def match(index: FootageIndex, frame_variants: list[list[str]], weak: float, str
     return out
 
 
+def chance_matches(strong: float, weak: float, index_fingerprints: int = 1_000_000, frames: int = 12,
+                   variants: int = 7, per_row: int = 24) -> float:
+    """Expected unrelated rows matched per reel *by chance* under the match rule, if fingerprints were
+    random 64-bit strings. Real images are less random than that, so treat it as a lower bound: keep it
+    far below 1. With the defaults (1M fingerprints, 12 frames x 7 variants, 24 hashes per row):
+    strong 0.90 / weak 0.80 gives ~0.004 per reel; weak 0.78 gives ~0.8; weak 0.74 over 100."""
+    def tail(w: float) -> float:  # P(similarity >= w) for one random pair
+        d = int(np.floor((1 - w) * fp.HASH_BITS + 1e-9))
+        return sum(comb(fp.HASH_BITS, k) for k in range(d + 1)) / 2 ** fp.HASH_BITS
+
+    def per_frame(w: float) -> float:  # P(a keyframe reaches w against some hash of one row)
+        return 1 - (1 - tail(w)) ** (variants * per_row)
+
+    rows = index_fingerprints / per_row
+    return rows * (frames * per_frame(strong) + comb(frames, 2) * per_frame(weak) ** 2)
+
+
 def reel_embeddings(ctx: Context, frames: list[Keyframe]) -> np.ndarray | None:
     """CLIP embeddings of the reel's frames, when USE_CLIP is on and CLIP is installed."""
     if not ctx.settings.use_clip:
@@ -157,34 +176,30 @@ def report_link(ctx: Context, report_id: str | None) -> str:
 
 def lookup(ctx: Context, claim: Claim, frames: list[Keyframe], video_hash: str) -> list[Evidence]:
     usable = _usable(frames)
-    strong = ctx.settings.strong_similarity
-    before = (claim_cutoff(ctx, claim) - timedelta(days=ctx.settings.date_tolerance_days)).isoformat()
+    cutoff = claim_cutoff(ctx, claim)
+    t = Thresholds.of(ctx.settings)
     out: list[Evidence] = []
     for m in find(ctx, frames, video_hash):
         row = m.row
         seen = row["kind"] == "seen"
-        earlier = bool(row["first_seen"] and row["first_seen"] < before)
         sightings = row.get("times_seen") or 1
         notes = [f"{m.frames_matching} reel keyframe(s) match."]
         if sightings > 1:
             notes.append(f"Seen {sightings} times since {row['first_seen']}.")
         notes.append("Recorded by an earlier check here." if seen else "Seeded from a fact-check.")
+        common = dict(source="own_index", date=row["first_seen"], similarity=round(m.similarity, 3),
+                      clip_similarity=round(m.clip_similarity, 3) if m.clip_similarity is not None else None,
+                      frames_matching=m.frames_matching,
+                      matched_frame=usable[m.frame].index if m.frame is not None else None)
         out.append(Evidence(
-            source="own_index",
             title=row["claim_note"] or (f"Checked here on {row['first_seen']}" if seen else "Known recycled footage"),
-            url=row["source_url"] or report_link(ctx, row.get("report_id")),
-            date=row["first_seen"],
-            similarity=round(m.similarity, 3),
-            clip_similarity=round(m.clip_similarity, 3) if m.clip_similarity is not None else None,
-            matched_frame=usable[m.frame].index if m.frame is not None else None,
-            notes=" ".join(notes),
-            supports="earlier_footage" if earlier else "lead",
-        ))
-        if row["kind"] == "debunked" and row["fact_check_url"] and m.similarity >= strong:
-            out.append(Evidence(source="own_index", title=f"Fact-check of this footage: {row['claim_note']}",
-                                url=row["fact_check_url"], date=row["first_seen"], similarity=round(m.similarity, 3),
-                                rating="debunked footage", relevance=1.0, supports="debunk",
-                                notes="The same footage is in our index of debunked videos."))
+            url=row["source_url"] or report_link(ctx, row.get("report_id")), notes=" ".join(notes), **common))
+        if row["kind"] == "debunked" and row["fact_check_url"]:
+            out.append(Evidence(title=f"Fact-check of this footage: {row['claim_note']}", url=row["fact_check_url"],
+                                rating=DEBUNKED_FOOTAGE, relevance=1.0,
+                                notes="The same footage is in our index of debunked videos.", **common))
+    for e in out:
+        e.supports = classify(e, cutoff, t)
     return out[:6]
 
 
@@ -203,7 +218,8 @@ def remember(ctx: Context, frames: list[Keyframe], video_hash: str, report_id: s
             ctx.store.footage_touch(m.row["id"], today)
             return "merged"
     emb = reel_embeddings(ctx, usable)
-    ctx.store.footage_add(kind="seen", phashes=[k.phash for k in usable], first_seen=today,
+    ctx.store.footage_add(kind="seen", phashes=[h for k in usable for h in fp.stored_from_variants(k.variants)],
+                          first_seen=today,
                           video_hash=video_hash, report_id=report_id,
                           embeddings=encode_embeddings(emb) if emb is not None else None)
     return "added"

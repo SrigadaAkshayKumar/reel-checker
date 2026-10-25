@@ -17,6 +17,7 @@ data/uploads/
 data/.ip_salt
 data/samples/*
 !data/samples/.gitkeep
+data/eval/reels/
 output/
 *.mp4
 *.mov

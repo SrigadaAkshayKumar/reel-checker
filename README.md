@@ -21,8 +21,8 @@ full plan: [`docs/workflow.md`](docs/workflow.md).
 
 Phases 1-6 of the plan: the analysis pipeline (CLI), the FastAPI backend with a job queue, the Next.js
 web app (`frontend/`, see [`frontend/README.md`](frontend/README.md)), and the own index of known footage with
-seeding tools ([`data/seed/README.md`](data/seed/README.md)). Next: testing on real reels and tuning thresholds
-(Phase 7), then deployment.
+seeding tools ([`data/seed/README.md`](data/seed/README.md)), and the measurement tools to test on real reels
+and tune thresholds ([`data/eval/README.md`](data/eval/README.md)). Next: deployment (Phase 8).
 
 ## Quick start
 
@@ -49,6 +49,9 @@ python run.py index harvest              # fact-checks rated false → candidate
 python run.py index import ../data/seed/candidates.csv
 python run.py index add-youtube URL --note "..." [--fact-check URL]   # thumbnails only, nothing downloaded
 python run.py index list | stats | export pack.json | remove ID
+python run.py eval ../data/eval/cases.csv   # measure on labelled reels + recommend thresholds
+python run.py bench ~/Videos/*.mp4       # fingerprint robustness under 17 common edits (no keys)
+python run.py review                     # flagged production results awaiting human review
 python run.py quota                      # today's free-tier usage
 pytest -q && ruff check .                # tests (no network, no keys needed)
 ```
@@ -126,6 +129,8 @@ reel.mp4 ─ ffprobe/ffmpeg ─ keyframes (even sweep + scene changes, de-duplic
             3. YouTube        search.list with publishedBefore = claimed date; hash each result's thumbnail
                               and its 3 auto frame grabs against the reel's keyframes (images only, no video)
             4. Vision Web     only when 1-3 found nothing: pages with matching images (leads, no dates)
+        ─ what each piece of evidence supports: one shared rule set (backend/app/pipeline/scoring.py), so
+          `run.py eval` can re-score saved evidence at any threshold exactly as production would
         ─ verdict rules (backend/app/pipeline/verdict.py), then a Gemini summary grounded in that evidence
         ─ report.json / report.md / side-by-side images; the work dir is deleted, fingerprints are kept
 ```
@@ -148,9 +153,11 @@ backend/
                             (mirrors the Postgres schema)
   app/pipeline/             extract, transcribe, ocr, llm (Gemini), claims, fingerprint, clip,
                             evidence/{own_index,factcheck_api,youtube,vision_web}, verdict, report, runner
+  app/eval/                 evaluate (labelled reels → metrics + threshold sweep), bench, review queue
   tests/                    synthetic reels via ffmpeg; every external API faked; API via TestClient
   tests/e2e_server.py       real API + worker with faked external services, for the frontend's Playwright tests
 frontend/                   Next.js 16 web app: upload, live progress, report page, privacy page
 data/seed/                  how to seed known debunked footage
+data/eval/                  how to build the evaluation set (cases.csv); reels themselves are never committed
 docs/                       project overview + full workflow
 ```

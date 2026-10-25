@@ -13,6 +13,7 @@ from ...core.http import HttpError
 from .. import fingerprint as fp
 from ..context import Context, SkipCheck, claim_cutoff
 from ..models import Claim, Evidence, Keyframe
+from ..scoring import Thresholds, classify
 
 SEARCH = "https://www.googleapis.com/youtube/v3/search"
 FRAME_URLS = ("https://i.ytimg.com/vi/{id}/hqdefault.jpg", "https://i.ytimg.com/vi/{id}/1.jpg",
@@ -82,7 +83,6 @@ def search(ctx: Context, claim: Claim, frames: list[Keyframe]) -> list[Evidence]
         hashes = _video_hashes(ctx, vid)
         sim, pos = fp.best_match(frame_variants, hashes) if hashes else (0.0, None)
         published = (snip.get("publishedAt") or "")[:10] or None
-        earlier = bool(published and published < before.isoformat())
         n_frames = fp.frames_matching(frame_variants, hashes, ctx.settings.weak_similarity) if hashes else 0
         out.append(Evidence(
             source="youtube",
@@ -93,17 +93,18 @@ def search(ctx: Context, claim: Claim, frames: list[Keyframe]) -> list[Evidence]
             matched_frame=usable[pos].index if pos is not None else None,
             publisher=snip.get("channelTitle", ""),
             thumbnail_url=FRAME_URLS[0].format(id=vid),
+            frames_matching=n_frames,
             notes=f"{n_frames} reel keyframe(s) match" if n_frames else "",
-            supports="earlier_footage" if earlier and sim >= ctx.settings.weak_similarity else "lead",
         ))
+        out[-1].supports = classify(out[-1], cutoff, Thresholds.of(ctx.settings))
     out.sort(key=lambda e: e.similarity or 0, reverse=True)
     if ctx.settings.use_clip:
-        _clip_rescore(ctx, out[:5], usable, before)
+        _clip_rescore(ctx, out[:5], usable, cutoff)
         out.sort(key=lambda e: max(e.similarity or 0, e.clip_similarity or 0), reverse=True)
     return out[:6]
 
 
-def _clip_rescore(ctx: Context, candidates: list[Evidence], frames: list[Keyframe], before: date) -> None:
+def _clip_rescore(ctx: Context, candidates: list[Evidence], frames: list[Keyframe], cutoff: date) -> None:
     """Re-score pHash near-misses (0.6 to the weak threshold) with CLIP."""
     from .. import clip
     near = [e for e in candidates if e.similarity is not None
@@ -121,5 +122,4 @@ def _clip_rescore(ctx: Context, candidates: list[Evidence], frames: list[Keyfram
                 continue
         if imgs:
             e.clip_similarity = round(clip.best_cosine(reel, clip.embed(imgs)), 3)
-            if e.clip_similarity >= ctx.settings.clip_strong and e.date and e.date < before.isoformat():
-                e.supports = "earlier_footage"
+            e.supports = classify(e, cutoff, Thresholds.of(ctx.settings))

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from app.db.store import Store
 from app.pipeline import fingerprint as fp
@@ -292,4 +293,21 @@ def test_cli_index_commands(tmp_path):
     assert "removed" in run("remove", "1")[1]
     code, out = run("import", str(tmp_path / "pack.json"))
     assert code == 0 and "1 added" in out
-    assert "1 entries (1 debunked), 1 fingerprints" in run("stats")[1]
+    assert "1 entries (1 debunked), 2 fingerprints" in run("stats")[1]  # frame + its centre crop
+
+
+def test_seed_matches_a_20_percent_crop(ctx, tmp_path):
+    """bench found crops of the original never matched until seeds stored a centre-crop hash too."""
+    from app.pipeline.models import Keyframe
+    still = tmp_path / "s.jpg"
+    still.write_bytes(jpeg(scene(80)))
+    seeding.add_entry(ctx, {"images": [str(still)], "first_seen": "2015-01-01", "source_url": "https://x"})
+    cropped = fp.center_crop(scene(80), 0.8).resize((640, 360))
+    frames = []
+    for i, img in enumerate([cropped, cropped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)]):
+        path = tmp_path / f"f{i}.jpg"
+        img.save(path)
+        v = fp.variants(img)
+        frames.append(Keyframe(i, float(i), str(path), *fp.image_stats(img), phash=v[0], variants=v))
+    found = own_index.find(ctx, frames)
+    assert found and found[0].similarity >= ctx.settings.strong_similarity

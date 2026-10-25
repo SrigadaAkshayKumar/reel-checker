@@ -26,6 +26,7 @@ export interface Evidence {
   date?: string;
   similarity?: number;
   clip_similarity?: number;
+  frames_matching?: number;
   matched_frame?: number;
   publisher?: string;
   rating?: string;
@@ -62,6 +63,7 @@ export interface Report {
   input: { duration: number; width: number; height: number; has_audio: boolean };
   caption: string;
   claim: Claim;
+  cutoff_date?: string; // footage published before this predates the claim
   transcript: { text: string; language: string; confidence: number | null; engine: string } | null;
   onscreen_text: string[];
   verdict: Verdict;

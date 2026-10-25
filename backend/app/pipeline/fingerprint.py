@@ -88,6 +88,19 @@ def variants(img: Image.Image) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def stored_hashes(img: Image.Image) -> list[str]:
+    """What the index keeps per frame: the content box and its centre 80%. The query side already
+    tries crops of the reel; the stored crop catches the reverse, a reel that is a crop of the original
+    (a 20% crop otherwise never matches: run.py bench)."""
+    box = content_box(img)
+    return [phash(box), phash(center_crop(box))]
+
+
+def stored_from_variants(variants: list[str]) -> list[str]:
+    """stored_hashes() for a keyframe whose variants() are already computed."""
+    return [variants[0], variants[2]]
+
+
 def image_stats(img: Image.Image) -> tuple[float, float]:
     gray = np.asarray(img.convert("L"), dtype=np.float32)
     return float(gray.mean()), float(gray.std())

@@ -1,0 +1,6 @@
+file,expected,caption,posted_date,original_url,tags,notes
+reels/plane-crash-hyd.mp4,recycled,"ఈరోజు హైదరాబాద్ ఎయిర్‌పోర్ట్‌లో విమాన ప్రమాదం",2026-10-20,https://www.youtube.com/watch?v=XXXXXXXXXXX,"te,speech,letterbox",2015 crash in Brazil reshared
+reels/army-video.mp4,recycled,,2026-09-02,https://www.youtube.com/watch?v=YYYYYYYYYYY,"hi,mirrored,caption",old military exercise
+reels/rain-today.mp4,genuine,"Heavy rain in Vijayawada right now",2026-10-24,,"te,text-only",filmed by a friend on the day
+reels/too-short.mp4,poor,,,,short,1.5 seconds
+reels/broken.mp4,error,,,,corrupt,truncated download

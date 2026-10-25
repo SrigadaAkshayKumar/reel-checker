@@ -44,7 +44,7 @@ create table if not exists known_footage (
   times_seen integer not null default 1,  -- sightings of this footage (re-uploads merge here)
   last_seen text,
   report_id text,                  -- 'seen' rows: the report that first recorded this footage
-  embeddings blob                  -- optional CLIP embeddings (npy, float16, one row per hash)
+  embeddings blob                  -- optional CLIP embeddings (npy, float16, one row per frame)
 );
 create index if not exists known_footage_video on known_footage(video_hash);
 create index if not exists known_footage_source on known_footage(source_url);
@@ -69,6 +69,12 @@ create table if not exists rate_limit (
   client text not null,            -- salted hash of the IP, never the IP itself
   used integer not null default 0,
   primary key (day, client)
+);
+create table if not exists reviews (
+  report_id text primary key,
+  outcome text not null,           -- correct | wrong | unsure (human review, Phase 7)
+  note text,
+  reviewed_at text not null
 );
 create table if not exists feedback (
   id integer primary key autoincrement,
@@ -151,6 +157,12 @@ class Store:
             (self._period(monthly), api, units, units))
         self.db.commit()
         return True
+
+    def quota_add(self, api: str, period: str, units: int) -> None:
+        """Charge units spent elsewhere (an evaluation run on a database copy)."""
+        self.db.execute("insert into quota values (?, ?, ?) on conflict(period, api) do update set used = used + ?",
+                        (period, api, units, units))
+        self.db.commit()
 
     # --- reports -----------------------------------------------------------
     def report_get(self, video_hash: str) -> dict | None:
@@ -297,6 +309,10 @@ class Store:
                         (date.today().isoformat(), client))
         self.db.commit()
         return True
+
+    def review_put(self, report_id: str, outcome: str, note: str = "") -> None:
+        self.db.execute("insert or replace into reviews values (?, ?, ?, ?)", (report_id, outcome, note, _now()))
+        self.db.commit()
 
     def feedback_add(self, report_id: str, correct: bool | None, note: str) -> int:
         cur = self.db.execute("insert into feedback (report_id, correct, note, created_at) values (?, ?, ?, ?)",

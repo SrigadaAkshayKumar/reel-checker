@@ -2,27 +2,12 @@
 from __future__ import annotations
 
 from ...core.http import HttpError
-from ..context import Context, SkipCheck
+from ..context import Context, SkipCheck, claim_cutoff
 from ..models import Claim, Evidence
+from ..scoring import Thresholds, classify, rating_is_false  # noqa: F401  (re-exported)
 from ..text import normalize, overlap, terms
 
 URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
-
-# Ratings that mean "the claim is not what it says". Matched as substrings.
-FALSE_RATINGS = (
-    "false", "fake", "untrue", "misleading", "mislead", "altered", "doctored", "edited", "manipulated",
-    "out of context", "missing context", "lacks context", "old video", "old image", "old footage",
-    "recycled", "unrelated", "incorrect", "wrong", "hoax", "scam", "satire", "no evidence",
-    "unproven", "distorted", "exaggerat", "pants on fire", "four pinocchios", "baseless", "fabricated",
-    "फर्जी", "झूठ", "भ्रामक", "गलत", "फेक", "पुराना", "भ्रम",
-    "తప్పు", "ఫేక్", "అబద్ధ", "పాత", "తప్పుదోవ", "నకిలీ",
-)
-
-
-def rating_is_false(rating: str) -> bool:
-    r = normalize(rating)
-    return any(word in r for word in FALSE_RATINGS)
-
 
 def claim_terms(claim: Claim) -> set[str]:
     return terms(" ".join([*claim.keywords, claim.event, claim.location]))
@@ -64,7 +49,6 @@ def search(ctx: Context, claim: Claim) -> list[Evidence]:
                 rating = review.get("textualRating", "")
                 doc = " ".join([c.get("text", ""), review.get("title", "")])
                 relevance = overlap(wanted, doc) if wanted else 0.0
-                is_false = rating_is_false(rating)
                 found[url] = Evidence(
                     source="fact_check",
                     title=review.get("title") or c.get("text", "")[:140],
@@ -74,8 +58,8 @@ def search(ctx: Context, claim: Claim) -> list[Evidence]:
                     rating=rating,
                     relevance=round(relevance, 2),
                     notes=f"Reviewed claim: {c.get('text', '')[:200]}",
-                    supports="debunk" if is_false and relevance >= ctx.settings.factcheck_min_relevance else "lead",
                 )
+                found[url].supports = classify(found[url], claim_cutoff(ctx, claim), Thresholds.of(ctx.settings))
     if errors and not found:
         raise SkipCheck("failed", errors[0])
     ranked = sorted(found.values(), key=lambda e: (e.supports == "debunk", e.relevance or 0), reverse=True)

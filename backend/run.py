@@ -7,6 +7,9 @@
   python run.py index import seeds.json|candidates.csv      python run.py index export pack.json
   python run.py index harvest [--query "old video"]... [--out ../data/seed/candidates.csv]
   python run.py index list | stats | remove ID
+  python run.py eval ../data/eval/cases.csv [--max-fpr 0] | eval --rescore output/eval/<run>/results.json
+  python run.py bench VIDEO... | bench --synthetic 6   (fingerprint robustness, no keys needed)
+  python run.py review [show ID | mark ID correct|wrong|unsure [--note ...] | stats]
   python run.py quota
 """
 from __future__ import annotations
@@ -158,6 +161,137 @@ def cmd_index(argv: list[str]) -> int:
     return 0
 
 
+def cmd_eval(argv: list[str]) -> int:
+    from datetime import datetime
+
+    from app.eval import evaluate
+    p = argparse.ArgumentParser(prog="run.py eval", description="Measure the checker on labelled reels.")
+    p.add_argument("cases", nargs="?", type=Path, help="cases CSV (see data/eval/README.md)")
+    p.add_argument("--rescore", type=Path, help="re-score a previous results.json instead (no API calls)")
+    p.add_argument("--max-fpr", type=float, default=0.0, help="false-positive budget for the recommendation")
+    p.add_argument("--out", type=Path, help="report folder (default: output/eval/<timestamp>)")
+    p.add_argument("--no-sweep", action="store_true")
+    a = p.parse_args(argv)
+    if not a.cases and not a.rescore:
+        p.error("give a cases CSV or --rescore results.json")
+    settings = load_settings()
+    try:
+        if a.rescore:
+            results = evaluate.load_results(a.rescore)
+        else:
+            cases = evaluate.read_cases(a.cases)
+            print(f"{len(cases)} cases (runs on a copy of the database; quota is charged to the real one)")
+
+            def progress(n, case, r):
+                verdict = r.report["verdict"] if r.report else f"rejected: {r.error[:50]}"
+                print(f"  {n:>3}/{len(cases)} {case.file.name[:40]:<40} {case.expected:<9} {r.seconds:>5}s  "
+                      f"(capture verdict: {verdict})")
+            results = evaluate.run_cases(cases, settings, progress=progress)
+    except evaluate.CaseError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    out = a.out or settings.output_dir / "eval" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    summary = evaluate.write_report(out, results, settings, a.max_fpr, do_sweep=not a.no_sweep)
+    for line in evaluate.summary_lines(summary["metrics"], summary["recommendation"]):
+        print(line)
+    print(f"report: {out}/report.md")
+    return 0
+
+
+def cmd_bench(argv: list[str]) -> int:
+    import tempfile
+    from datetime import datetime
+
+    from app.eval import bench
+    p = argparse.ArgumentParser(prog="run.py bench", description="Fingerprint robustness under common edits.")
+    p.add_argument("videos", nargs="*", type=Path, help="source videos (any footage; 2 or more)")
+    p.add_argument("--synthetic", type=int, metavar="N", help="use N generated videos instead")
+    p.add_argument("--edits", help=f"comma-separated subset of: {', '.join(bench.TRANSFORMS)}")
+    p.add_argument("--out", type=Path, help="report folder (default: output/bench/<timestamp>)")
+    a = p.parse_args(argv)
+    settings = load_settings()
+    edits = [e.strip() for e in a.edits.split(",")] if a.edits else None
+    unknown = set(edits or []) - set(bench.TRANSFORMS)
+    if unknown:
+        p.error(f"unknown edits: {', '.join(sorted(unknown))}")
+    with tempfile.TemporaryDirectory() as tmp:
+        if a.synthetic:
+            print(f"generating {a.synthetic} synthetic videos…")
+            videos = bench.synthetic_sources(Path(tmp), a.synthetic)
+        else:
+            videos = [v for v in a.videos if v.is_file()]
+        if len(videos) < 2:
+            p.error("need at least 2 videos (or --synthetic N)")
+        try:
+            result = bench.run(videos, settings, edits)
+        except (ValueError, RuntimeError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+    out = a.out or settings.output_dir / "bench" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    report = bench.write_report(result, out, synthetic=bool(a.synthetic))
+    cur, best = result["current"], result["best_without_false_matches"]
+    print(f"current thresholds: recall {cur['recall']:.0%}, false matches {cur['false_matches']}")
+    if best:
+        print(f"best safe setting: strong {best['strong']}, weak {best['weak']}, recall {best['recall']:.0%}")
+    print(f"report: {report}")
+    return 0
+
+
+def cmd_review(argv: list[str]) -> int:
+    from app.eval import review
+    p = argparse.ArgumentParser(prog="run.py review", description="Review flagged production results.")
+    sub = p.add_subparsers(dest="action")
+    sub.add_parser("list").add_argument("--all", action="store_true", help="include reviewed reports")
+    sub.add_parser("show").add_argument("id")
+    mk = sub.add_parser("mark")
+    mk.add_argument("id")
+    mk.add_argument("outcome", choices=review.OUTCOMES)
+    mk.add_argument("--note", default="")
+    sub.add_parser("stats")
+    a = p.parse_args(argv)
+    settings = load_settings()
+    store = Store(settings.db_path)
+    try:
+        if a.action == "mark":
+            try:
+                review.mark(store, a.id, a.outcome, a.note)
+            except KeyError:
+                print(f"no report {a.id}", file=sys.stderr)
+                return 2
+            print(f"{a.id}: {a.outcome}")
+        elif a.action == "show":
+            report = store.report_by_id(a.id)
+            if not report:
+                print(f"no report {a.id}", file=sys.stderr)
+                return 2
+            print(to_console(report))
+            for f in store.db.execute("select correct, note, created_at from feedback where report_id = ?", (a.id,)):
+                print(f"feedback {f['created_at'][:10]}: {'yes' if f['correct'] else 'NO'} {f['note'] or ''}")
+        elif a.action == "stats":
+            st = review.stats(store)
+            prec = st["flag_precision"]
+            print(f"open in queue: {st['open']} · flag precision from reviews: "
+                  f"{'-' if prec is None else f'{prec:.0%}'} · user feedback: {st['feedback_yes']} yes, "
+                  f"{st['feedback_no']} no")
+            for verdict, outcomes in st["by_verdict"].items():
+                print(f"  {verdict:<24} " + ", ".join(f"{k} {v}" for k, v in sorted(outcomes.items())))
+        else:
+            items = review.queue(store, include_reviewed=getattr(a, "all", False))
+            for it in items:
+                ev = it["top_evidence"] or {}
+                flags = f" · users said wrong {it['said_wrong']}x" if it["said_wrong"] else ""
+                done = f" [{it['outcome']}]" if it["outcome"] else ""
+                conf = f"{it['confidence'] or 0:.0%}"
+                print(f"{it['id']}  {it['verdict']:<20} {conf}  {it['created_at'][:10]}{flags}{done}")
+                print(f"    claim: {it['claim'][:100]}")
+                if ev:
+                    print(f"    evidence: {ev.get('source')} {ev.get('date') or ''} {ev.get('url') or ev.get('title')}")
+            print(f"{len(items)} to review. Mark with: python run.py review mark ID correct|wrong|unsure")
+    finally:
+        store.close()
+    return 0
+
+
 def cmd_quota() -> int:
     settings = load_settings()
     store = Store(settings.db_path)
@@ -174,6 +308,9 @@ def cmd_quota() -> int:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "index":
         return cmd_index(argv[1:])
+    commands = {"eval": cmd_eval, "bench": cmd_bench, "review": cmd_review}
+    if argv and argv[0] in commands:
+        return commands[argv[0]](argv[1:])
     if argv and argv[0] == "quota":
         return cmd_quota()
     return cmd_analyze(argv)
