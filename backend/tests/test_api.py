@@ -267,3 +267,86 @@ def test_share_page_does_not_present_non_matches_as_partial_matches(client, api_
     work(api_settings, http)
     page = client.get(f"/r/{job_id}").text
     assert "frames do not match" in page and "% frame match" not in page
+
+
+def test_orphaned_uploads_are_swept_but_active_and_fresh_ones_kept(api_settings):
+    import os
+    import time
+
+    from app.worker import sweep_uploads
+    up = api_settings.uploads_dir
+    up.mkdir(parents=True)
+    store = Store(api_settings.db_path)
+    store.job_create("aaaaaaaaaaaa", video_hash="h", upload_path=str(up / "aaaaaaaaaaaa.mp4"))
+    old = time.time() - api_settings.job_stale_seconds - 60
+    for name, age in (("aaaaaaaaaaaa.mp4", old), ("bbbbbbbbbbbb.mp4", old), ("cccccccccccc.mp4", None)):
+        (up / name).write_bytes(b"x")
+        if age:
+            os.utime(up / name, (age, age))
+    assert sweep_uploads(api_settings, store) == 1
+    assert sorted(p.name for p in up.iterdir()) == ["aaaaaaaaaaaa.mp4", "cccccccccccc.mp4"]  # queued job, too new
+    store.close()
+
+
+def test_backup_archive_and_rotation(api_settings, tmp_path):
+    import tarfile
+
+    from app.ops import backup
+    store = Store(api_settings.db_path)
+    store.report_put("h", {"job_id": "abcabcabcabc", "verdict": "UNVERIFIED"})
+    store.close()
+    (api_settings.output_dir / "abcabcabcabc").mkdir(parents=True)
+    (api_settings.output_dir / "abcabcabcabc" / "compare_1.jpg").write_bytes(b"jpg")
+    dest = tmp_path / "backups"
+    for n in range(3):
+        (dest / f"reel-checker-2026010{n}-000000.tar.gz").parent.mkdir(exist_ok=True)
+        (dest / f"reel-checker-2026010{n}-000000.tar.gz").write_bytes(b"old")
+    path, removed = backup(api_settings, dest, keep=2)
+    assert removed == 2 and len(list(dest.glob("*.tar.gz"))) == 2 and not list(dest.glob("*.partial"))
+    with tarfile.open(path) as tar:
+        names = tar.getnames()
+        assert "reel-checker.sqlite" in names and "output/abcabcabcabc/compare_1.jpg" in names
+        tar.extract("reel-checker.sqlite", tmp_path / "restore", filter="data")
+    restored = Store(tmp_path / "restore" / "reel-checker.sqlite")
+    assert restored.report_by_id("abcabcabcabc")["verdict"] == "UNVERIFIED"
+    restored.close()
+
+
+def test_startup_log_names_keys_never_values(api_settings, caplog):
+    import logging
+
+    from app.main import log_config
+    with caplog.at_level(logging.INFO, logger="reel-checker"):
+        log_config(replace(api_settings, cors_origins=""), worker=False)
+    text = caplog.text
+    assert "keys gemini,factcheck,youtube,vision" in text and "worker separate" in text
+    assert "test-gemini" not in text and "test-google" not in text
+    assert "CORS_ORIGINS is empty" in text
+
+
+def test_restore_round_trip(api_settings, tmp_path):
+    from app.ops import backup, restore
+    store = Store(api_settings.db_path)
+    store.report_put("h", {"job_id": "abcabcabcabc", "verdict": "UNVERIFIED"})
+    store.close()
+    (api_settings.output_dir / "abcabcabcabc").mkdir(parents=True)
+    (api_settings.output_dir / "abcabcabcabc" / "compare_1.jpg").write_bytes(b"jpg")
+    archive, _ = backup(api_settings, tmp_path / "b")
+
+    store = Store(api_settings.db_path)  # damage: a later report, a lost image
+    store.report_put("h2", {"job_id": "defdefdefdef", "verdict": "DEBUNKED"})
+    store.close()
+    (api_settings.output_dir / "abcabcabcabc" / "compare_1.jpg").unlink()
+
+    kept = restore(api_settings, archive)
+    store = Store(api_settings.db_path)
+    assert store.report_by_id("abcabcabcabc") and store.report_by_id("defdefdefdef") is None
+    store.close()
+    assert (api_settings.output_dir / "abcabcabcabc" / "compare_1.jpg").read_bytes() == b"jpg"
+    assert kept and kept.is_dir()
+    bogus = tmp_path / "bogus.tar.gz"
+    import tarfile
+    with tarfile.open(bogus, "w:gz"):
+        pass
+    with pytest.raises(ValueError, match="not a reel-checker backup"):
+        restore(api_settings, bogus)

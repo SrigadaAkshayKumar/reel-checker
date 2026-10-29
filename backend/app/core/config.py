@@ -6,6 +6,7 @@ without touching pipeline code.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -22,7 +23,11 @@ def _load_env_file(path: Path) -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip().removeprefix("export ").strip()
-        value = value.strip().strip('"').strip("'")
+        value = value.strip()
+        if value[:1] in ("'", '"') and value[0] in value[1:]:
+            value = value[1:value.index(value[0], 1)]  # quoted: keep everything inside the quotes
+        else:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()  # unquoted: drop "  # comment"
         if key and key not in os.environ:
             os.environ[key] = value
 

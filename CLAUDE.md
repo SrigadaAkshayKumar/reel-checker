@@ -1,9 +1,9 @@
 # Reel Fact-Checker
 
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
-`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-3 (pipeline + CLI), 4 (FastAPI +
-job queue), 6 (own index + seeding) and 7 (eval / bench / review, `data/eval/README.md`) in `backend/`; 5 (Next.js) in
-`frontend/`. Next: Phase 8, deployment.
+`docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-8 (pipeline + CLI, FastAPI + queue,
+Next.js in `frontend/`, own index, eval / bench / review, deployment: `compose.yaml`, `deploy/`, `docs/deploy.md`).
+Next: Phase 9, launch and the WhatsApp bot.
 
 ## Rules that define the product
 
@@ -51,3 +51,6 @@ npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright a
 - Evidence is classified only in `pipeline/scoring.py` (sources and `run.py eval` both call it). Never decide
   `supports` inline in a source module, or the threshold sweep stops matching production. Threshold changes go in
   `.env` and should come from an eval run, not a guess.
+- Deployment: `compose.yaml` is the production stack and CI's `docker` job runs it with `deploy/smoke-test.sh`; keep
+  both green. Nothing may log request lines or client IPs (uvicorn runs with `--no-access-log`, Caddy has no `log`).
+  New settings need a line in `.env.example`; data lives in the `data` volume (`/var/lib/reel-checker`).

@@ -1,0 +1,8 @@
+# Build context is the repo root: send only what the image needs.
+*
+!backend/app
+!backend/run.py
+!backend/requirements.txt
+!data/seed
+**/__pycache__
+**/*.pyc

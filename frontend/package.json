@@ -10,7 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
-    "e2e:build": "NEXT_PUBLIC_API_URL=http://localhost:8010 NEXT_PUBLIC_SITE_URL=http://localhost:3010 next build"
+    "e2e:build": "NEXT_PUBLIC_API_URL=http://localhost:8010 NEXT_PUBLIC_SITE_URL=http://localhost:3010 next build && cp -r public .next/standalone/ && cp -r .next/static .next/standalone/.next/"
   },
   "dependencies": {
     "next": "16.4.3",

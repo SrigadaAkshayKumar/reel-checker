@@ -72,3 +72,29 @@ jobs:
         with:
           name: playwright-traces
           path: frontend/test-results/
+
+  docker:
+    # The production stack exactly as deployed: real Dockerfiles, compose.yaml, Caddy with HTTPS
+    # (local certificates for *.localhost), separate worker, the web profile, then deploy/smoke-test.sh.
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Test configuration
+        run: |
+          cat > .env <<'ENV'
+          APP_DOMAIN=app.localhost
+          API_DOMAIN=api.localhost
+          ACME_EMAIL=ci@example.org
+          CADDY_GLOBAL=local_certs
+          CADDY_SITES=all
+          COMPOSE_PROFILES=web
+          ENV
+      - run: docker compose build
+      - run: docker compose up -d
+      - run: deploy/smoke-test.sh
+      - if: failure()
+        run: docker compose ps && docker compose logs --no-color --tail=200
+      - if: always()
+        run: docker compose down -v

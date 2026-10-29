@@ -1,0 +1,23 @@
+# Shared by every site. No `log` directive: Caddy keeps no access log, so no visitor IPs are stored.
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
+(api) {
+	import common
+	# Uploads: 50 MB limit in the app, a little headroom here for multipart overhead.
+	request_body {
+		max_size 55MB
+	}
+	reverse_proxy api:8000 {
+		health_uri /api/health
+		health_interval 30s
+	}
+}

@@ -5,11 +5,12 @@
   python run.py index add old.mp4 --first-seen 2016-05-01 [--source-url URL] --note "..." [--fact-check URL]
   python run.py index add-images still1.jpg https://.../still2.jpg --first-seen ... --source-url URL --note "..."
   python run.py index import seeds.json|candidates.csv      python run.py index export pack.json
-  python run.py index harvest [--query "old video"]... [--out ../data/seed/candidates.csv]
+  python run.py index harvest [--query "old video"]... [--out FILE]   (default: <data>/seed/candidates.csv)
   python run.py index list | stats | remove ID
   python run.py eval ../data/eval/cases.csv [--max-fpr 0] | eval --rescore output/eval/<run>/results.json
   python run.py bench VIDEO... | bench --synthetic 6   (fingerprint robustness, no keys needed)
   python run.py review [show ID | mark ID correct|wrong|unsure [--note ...] | stats]
+  python run.py backup [DIR] [--keep 14]       python run.py restore ARCHIVE --yes
   python run.py quota
 """
 from __future__ import annotations
@@ -20,7 +21,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from app.core.config import load_settings
+from app.core.config import REPO_ROOT, load_settings
 from app.core.http import Http
 from app.db.store import Store
 from app.pipeline import extract, seeding
@@ -93,7 +94,7 @@ def cmd_index(argv: list[str]) -> int:
     exp.add_argument("--all", action="store_true", help="include 'seen' rows from analysed reels")
     hv = sub.add_parser("harvest", help="collect fact-checks rated false into a CSV of candidates to fill in")
     hv.add_argument("--query", action="append", help="search text (repeatable); default: data/seed/harvest_queries.txt")
-    hv.add_argument("--out", type=Path, default=Path("../data/seed/candidates.csv"))
+    hv.add_argument("--out", type=Path, help="candidates CSV (default: <DATA_DIR>/seed/candidates.csv)")
     sub.add_parser("list", help="show indexed footage")
     sub.add_parser("stats", help="counts and the most-resurfaced footage")
     rm = sub.add_parser("remove", help="delete an entry")
@@ -128,7 +129,8 @@ def cmd_index(argv: list[str]) -> int:
             a.file.write_text(json.dumps(entries, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
             print(f"wrote {len(entries)} entries to {a.file}")
         elif a.action == "harvest":
-            queries = a.query or [q.strip() for q in (settings.data_dir / "seed" / "harvest_queries.txt")
+            a.out = a.out or settings.data_dir / "seed" / "candidates.csv"
+            queries = a.query or [q.strip() for q in (REPO_ROOT / "data" / "seed" / "harvest_queries.txt")
                                   .read_text(encoding="utf-8").splitlines() if q.strip() and not q.startswith("#")]
             n, errors = seeding.harvest(ctx, queries, a.out)
             for e in errors:
@@ -292,6 +294,35 @@ def cmd_review(argv: list[str]) -> int:
     return 0
 
 
+def cmd_backup(argv: list[str]) -> int:
+    from app.ops import backup
+    p = argparse.ArgumentParser(prog="run.py backup", description="Snapshot the database and report images.")
+    p.add_argument("dest", type=Path, nargs="?", help="backup folder (default: <DATA_DIR>/backups)")
+    p.add_argument("--keep", type=int, default=14, help="how many backups to keep (default 14)")
+    a = p.parse_args(argv)
+    settings = load_settings()
+    path, removed = backup(settings, a.dest or settings.data_dir / "backups", keep=a.keep)
+    print(f"backup: {path} ({path.stat().st_size / 1048576:.1f} MB)" + (f", removed {removed} old" if removed else ""))
+    return 0
+
+
+def cmd_restore(argv: list[str]) -> int:
+    from app.ops import restore
+    p = argparse.ArgumentParser(prog="run.py restore", description="Restore a backup (stop api + worker first).")
+    p.add_argument("archive", type=Path)
+    p.add_argument("--yes", action="store_true", help="confirm: replaces the current database")
+    a = p.parse_args(argv)
+    if not a.yes:
+        p.error("this replaces the current database; stop the api and worker, then add --yes")
+    try:
+        kept = restore(load_settings(), a.archive)
+    except (ValueError, OSError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"restored {a.archive}" + (f"; previous report images kept in {kept}" if kept else ""))
+    return 0
+
+
 def cmd_quota() -> int:
     settings = load_settings()
     store = Store(settings.db_path)
@@ -308,7 +339,8 @@ def cmd_quota() -> int:
 def main(argv: list[str]) -> int:
     if argv and argv[0] == "index":
         return cmd_index(argv[1:])
-    commands = {"eval": cmd_eval, "bench": cmd_bench, "review": cmd_review}
+    commands = {"eval": cmd_eval, "bench": cmd_bench, "review": cmd_review, "backup": cmd_backup,
+                "restore": cmd_restore}
     if argv and argv[0] in commands:
         return commands[argv[0]](argv[1:])
     if argv and argv[0] == "quota":

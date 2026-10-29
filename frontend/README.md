@@ -35,6 +35,11 @@ On the backend set `CORS_ORIGINS` to this site's URL and `PUBLIC_BASE_URL` to th
 The "Open in Google Lens / Yandex / TinEye" buttons appear when the backend is publicly reachable; on localhost
 the report offers frame downloads instead.
 
+## Deploy
+
+Either the `web` service in `../compose.yaml` (standalone server, `Dockerfile` here) or Vercel with Root
+Directory `frontend`: see [`../docs/deploy.md`](../docs/deploy.md).
+
 ## Checks
 
 ```bash

@@ -22,7 +22,14 @@ full plan: [`docs/workflow.md`](docs/workflow.md).
 Phases 1-6 of the plan: the analysis pipeline (CLI), the FastAPI backend with a job queue, the Next.js
 web app (`frontend/`, see [`frontend/README.md`](frontend/README.md)), and the own index of known footage with
 seeding tools ([`data/seed/README.md`](data/seed/README.md)), and the measurement tools to test on real reels
-and tune thresholds ([`data/eval/README.md`](data/eval/README.md)). Next: deployment (Phase 8).
+and tune thresholds ([`data/eval/README.md`](data/eval/README.md)), and a production deployment: one free VM
+with Docker Compose, automatic HTTPS, backups and a smoke test ([`docs/deploy.md`](docs/deploy.md)).
+
+## Deploy
+
+[`docs/deploy.md`](docs/deploy.md): Oracle Cloud Always Free VM, `compose.yaml` (Caddy + API + worker +
+website), `deploy/setup-vm.sh`, nightly backups, UptimeRobot, and a GitHub Actions deploy button. CI builds and
+smoke-tests the whole stack on every push.
 
 ## Quick start
 
@@ -52,6 +59,7 @@ python run.py index list | stats | export pack.json | remove ID
 python run.py eval ../data/eval/cases.csv   # measure on labelled reels + recommend thresholds
 python run.py bench ~/Videos/*.mp4       # fingerprint robustness under 17 common edits (no keys)
 python run.py review                     # flagged production results awaiting human review
+python run.py backup | restore ARCHIVE --yes   # database + report images
 python run.py quota                      # today's free-tier usage
 pytest -q && ruff check .                # tests (no network, no keys needed)
 ```
@@ -157,6 +165,7 @@ backend/
   tests/                    synthetic reels via ffmpeg; every external API faked; API via TestClient
   tests/e2e_server.py       real API + worker with faked external services, for the frontend's Playwright tests
 frontend/                   Next.js 16 web app: upload, live progress, report page, privacy page
+compose.yaml, deploy/       production stack: Caddy, API, worker, website; VM setup; smoke test
 data/seed/                  how to seed known debunked footage
 data/eval/                  how to build the evaluation set (cases.csv); reels themselves are never committed
 docs/                       project overview + full workflow

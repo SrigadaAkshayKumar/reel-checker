@@ -1,0 +1,17 @@
+# API and website on this VM. CADDY_SITES=all and COMPOSE_PROFILES=web
+{
+	email {$ACME_EMAIL}
+	{$CADDY_GLOBAL}
+}
+
+import /etc/caddy/common.caddy
+
+{$API_DOMAIN} {
+	import api
+}
+
+{$APP_DOMAIN} {
+	import common
+	header X-Frame-Options "DENY"
+	reverse_proxy web:3000
+}

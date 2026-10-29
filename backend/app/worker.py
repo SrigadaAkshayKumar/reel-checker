@@ -29,6 +29,22 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def sweep_uploads(settings: Settings, store: Store) -> int:
+    """Privacy backstop: delete uploads no queued or running job owns (left by a crash between
+    saving and queueing, or a killed container). Recent files are left alone: the API may be
+    between writing the file and creating its job."""
+    if not settings.uploads_dir.is_dir():
+        return 0
+    active = {row["id"] for row in store.db.execute("select id from jobs where status in ('queued', 'running')")}
+    cutoff = time.time() - settings.job_stale_seconds
+    swept = 0
+    for f in settings.uploads_dir.iterdir():
+        if f.is_file() and f.stem not in active and f.stat().st_mtime < cutoff:
+            f.unlink(missing_ok=True)
+            swept += 1
+    return swept
+
+
 class Worker:
     def __init__(self, settings: Settings, http: Http | None = None):
         self.settings = settings
@@ -39,6 +55,9 @@ class Worker:
         ids = store.job_recover_stale(self.settings.job_stale_seconds, self.settings.job_max_attempts)
         if ids:
             log.warning("recovered stale jobs: %s", ", ".join(ids))
+        swept = sweep_uploads(self.settings, store)
+        if swept:
+            log.warning("deleted %d orphaned upload(s)", swept)
         self._last_recovery = time.monotonic()
 
     def run_once(self) -> bool:

@@ -1,0 +1,68 @@
+# Production stack for one VM (docs/deploy.md). Everything is configured from .env.
+#   docker compose up -d --build
+# Services: caddy (HTTPS, automatic certificates) → api (FastAPI) + worker (analyses),
+# and optionally web (Next.js) when COMPOSE_PROFILES=web and CADDY_SITES=all.
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: 10m, max-file: "5" }
+
+x-backend: &backend
+  build: { context: ., dockerfile: backend/Dockerfile }
+  image: reel-checker-api
+  env_file: [.env]
+  environment:
+    TRUST_PROXY: "true"            # client IP comes from Caddy's X-Forwarded-For
+    EMBEDDED_WORKER: "false"       # analyses run in the worker service
+    PUBLIC_BASE_URL: https://${APP_DOMAIN:?set APP_DOMAIN in .env}
+    CORS_ORIGINS: https://${APP_DOMAIN}
+  volumes: [data:/var/lib/reel-checker]
+  restart: unless-stopped
+  logging: *logging
+
+services:
+  api:
+    <<: *backend
+
+  worker:
+    <<: *backend
+    command: ["python", "-m", "app.worker"]
+    healthcheck: { disable: true }  # no HTTP server here
+    depends_on: { api: { condition: service_healthy } }
+    # More throughput on a bigger VM: docker compose up -d --scale worker=2
+
+  web:
+    profiles: [web]
+    build:
+      context: frontend
+      args:
+        NEXT_PUBLIC_API_URL: https://${API_DOMAIN:?set API_DOMAIN in .env}
+        NEXT_PUBLIC_SITE_URL: https://${APP_DOMAIN}
+    image: reel-checker-web
+    environment:
+      API_URL: http://api:8000      # server-side report fetches stay inside the VM
+    depends_on: { api: { condition: service_healthy } }
+    restart: unless-stopped
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env (Let's Encrypt expiry notices)}
+      CADDY_GLOBAL: ${CADDY_GLOBAL:-}  # "local_certs" for a local test without a public domain
+    volumes:
+      - ./deploy/caddy/${CADDY_SITES:-api}.Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/caddy/common.caddy:/etc/caddy/common.caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  data:          # database, report images, uploads in flight, backups
+  caddy_data:    # TLS certificates
+  caddy_config:

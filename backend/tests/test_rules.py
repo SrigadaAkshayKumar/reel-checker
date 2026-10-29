@@ -82,3 +82,15 @@ def test_undated_claim_notes_that_old_footage_may_not_contradict(settings):
     assert v.verdict == LIKELY_OLD_FOOTAGE and "does not say when" in v.reasons[-1]
     dated = Claim(claim_text="Plane crash today", keywords=["plane"], recency="current", claimed_date="2026-10-25")
     assert "does not say when" not in " ".join(decide(settings, dated, ev, GOOD, RAN).reasons)
+
+
+def test_env_file_inline_comments_and_quotes(tmp_path, monkeypatch):
+    from app.core.config import load_settings
+    for k in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "RATE_LIMIT_PER_DAY", "CORS_ORIGINS"):
+        monkeypatch.delenv(k, raising=False)
+    env = tmp_path / ".env"
+    env.write_text('GEMINI_API_KEY=abc123   # my key\nGOOGLE_API_KEY="x#y"  # quoted keeps #\n'
+                   "RATE_LIMIT_PER_DAY=5 # per day\nCORS_ORIGINS=https://a.example#frag\n")
+    s = load_settings(env)
+    assert (s.gemini_api_key, s.google_api_key, s.rate_limit_per_day) == ("abc123", "x#y", 5)
+    assert s.cors_origins == "https://a.example#frag"  # '#' without a space before it is part of the value

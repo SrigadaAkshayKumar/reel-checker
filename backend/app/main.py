@@ -18,6 +18,20 @@ from .core.config import Settings, load_settings
 from .db.store import Store
 from .pipeline.runner import VERSION
 
+log = logging.getLogger("reel-checker")
+
+
+def log_config(settings: Settings, worker: bool) -> None:
+    """One line at startup to diagnose a deployment. Key presence only, never values."""
+    keys = {"gemini": settings.gemini_api_key, "factcheck": settings.factcheck_key, "youtube": settings.youtube_key,
+            "vision": settings.vision_key if settings.vision_enabled else ""}
+    log.info("reel-checker %s: data %s, keys %s, worker %s, cors %s, public url %s, trust proxy %s", VERSION,
+             settings.data_dir, ",".join(k for k, v in keys.items() if v) or "none",
+             "embedded" if worker else "separate", settings.cors_origins or "-", settings.public_base_url or "-",
+             settings.trust_proxy)
+    if not settings.cors_origins:
+        log.warning("CORS_ORIGINS is empty: a frontend on another domain cannot call this API")
+
 
 def create_app(settings: Settings | None = None, *, start_worker: bool | None = None) -> FastAPI:
     settings = settings or load_settings()
@@ -27,6 +41,7 @@ def create_app(settings: Settings | None = None, *, start_worker: bool | None = 
     async def lifespan(app: FastAPI):
         Store(settings.db_path).close()  # create / migrate the schema up front
         settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+        log_config(settings, run_worker)
         stop = None
         if run_worker:
             from .worker import start_background

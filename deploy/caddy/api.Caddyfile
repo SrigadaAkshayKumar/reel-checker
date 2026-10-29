@@ -1,0 +1,11 @@
+# API only (the website runs on Vercel or elsewhere). CADDY_SITES=api
+{
+	email {$ACME_EMAIL}
+	{$CADDY_GLOBAL}
+}
+
+import /etc/caddy/common.caddy
+
+{$API_DOMAIN} {
+	import api
+}

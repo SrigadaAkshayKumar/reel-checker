@@ -19,11 +19,11 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
     },
     {
-      command: "npx next start -p 3010",
+      command: "node .next/standalone/server.js", // the same server the Docker image runs
       url: "http://localhost:3010",
       timeout: 60_000,
       reuseExistingServer: !process.env.CI,
-      env: { NEXT_PUBLIC_SITE_URL: "http://localhost:3010" },
+      env: { PORT: "3010", HOSTNAME: "localhost" },
     },
   ],
 });

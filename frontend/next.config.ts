@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  output: "standalone", // self-contained server for the Docker image (ignored by Vercel)
   partialPrefetching: true,
   // Link-preview crawlers that need metadata in <head> (no JS). The default list has WhatsApp but not Telegram.
   htmlLimitedBots:
