@@ -81,6 +81,7 @@ class OverlayService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        if (BuildConfig.DEBUG) Log.d("ReelOverlay", "start ${intent?.action} overlay=${Permissions.canOverlay(this)}")
         if (intent?.action == ACTION_STOP || !Permissions.canOverlay(this)) {
             stopSelf()
             return START_NOT_STICKY

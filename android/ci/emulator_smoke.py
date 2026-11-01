@@ -135,10 +135,20 @@ switches = [n for n in nodes(ui("3-settings")) if n.get("checkable") == "true"]
 if len(switches) < 2:
     shot("3-settings")
     raise SystemExit("floating button switches not found")
+def describe(sw):
+    return {k: sw.get(k) for k in ("checked", "enabled", "bounds")}
+
+
+print("switches before:", [describe(x) for x in switches])
 tap(*switches[1]["center"])  # "Show the button over every app"
+time.sleep(1)
 tap(*switches[0]["center"])  # "Floating check button"
 time.sleep(3)
 crash()
+after = ui("3-settings-after")
+print("switches after:", [describe(x) for x in nodes(after) if x.get("checkable") == "true"])
+print("settings screen:", screen_text(after)[:800])
+print("service log:", re.findall(r"ReelOverlay: .*", adb("logcat", "-d", "-s", "ReelOverlay:D", check=False)))
 adb("shell", "input", "keyevent", "KEYCODE_HOME")
 time.sleep(2)
 shot("3-dot")
