@@ -78,7 +78,9 @@ def diagnose(xml: str) -> None:
     print("logcat (app and errors):\n" + "\n".join(mine[-60:]))
 
 
-def wait_for(pattern: re.Pattern, name: str, seconds: int = 200) -> str:
+def wait_for(pattern: re.Pattern, name: str, seconds: int = 200, relaunch: bool = False) -> str:
+    """Poll the screen for `pattern`. With `relaunch`, bring the app back if the launcher covered it
+    (happens on a cold-booted emulator while the home screen is still settling)."""
     deadline = time.time() + seconds
     xml = ""
     while time.time() < deadline:
@@ -86,6 +88,8 @@ def wait_for(pattern: re.Pattern, name: str, seconds: int = 200) -> str:
         if pattern.search(xml):
             return xml
         crash()
+        if relaunch and f'package="{PKG}"' not in xml:
+            launch()
         time.sleep(2)
     shot(name)
     diagnose(xml)
@@ -104,9 +108,13 @@ adb("install", "-r", "-g", apk)  # -g grants runtime permissions (notifications)
 adb("logcat", "-c")
 adb("shell", "settings", "put", "global", "window_animation_scale", "0", check=False)
 
+def launch() -> None:
+    adb("shell", "am", "start", "-W", "-n", f"{PKG}/org.reelcheck.app.MainActivity")
+
+
 # 1. Launch
-adb("shell", "am", "start", "-W", "-n", f"{PKG}/org.reelcheck.app.MainActivity")
-wait_for(re.compile(r"free today|earned|free check is used"), "1-main")
+launch()
+wait_for(re.compile(r"free today|earned|free check is used"), "1-main", relaunch=True)
 shot("1-main")
 print("1. main screen and anonymous account: ok")
 
@@ -119,7 +127,7 @@ print("2. shared link checked:", FINISHED.search(xml).group(0))
 
 # 3. Floating button: allow the overlay, switch it on (and over every app: no usage access on the emulator)
 adb("shell", "appops", "set", PKG, "SYSTEM_ALERT_WINDOW", "allow")
-adb("shell", "am", "start", "-W", "-n", f"{PKG}/org.reelcheck.app.MainActivity")
+launch()
 for _ in range(4):  # scroll to the settings card
     adb("shell", "input", "swipe", "500", "1500", "500", "400", "300")
 time.sleep(1)
