@@ -142,6 +142,8 @@ def describe(sw):
 print("switches before:", [describe(x) for x in switches])
 tap(*switches[1]["center"])  # "Show the button over every app"
 time.sleep(1)
+# That hides the usage-access explanation and moves the layout: find the main switch again.
+switches = [n for n in nodes(ui("3-settings-mid")) if n.get("checkable") == "true"]
 tap(*switches[0]["center"])  # "Floating check button"
 time.sleep(3)
 crash()
