@@ -88,6 +88,10 @@ def wait_for(pattern: re.Pattern, name: str, seconds: int = 200, relaunch: bool 
         if pattern.search(xml):
             return xml
         crash()
+        if "isn't responding" in xml:  # a system app froze on the cold-booted emulator (not ours: crash() checks ours)
+            for n in nodes(xml):
+                if n.get("text") == "Wait":
+                    tap(*n["center"])
         if relaunch and f'package="{PKG}"' not in xml:
             launch()
         time.sleep(2)
