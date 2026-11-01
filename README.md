@@ -64,6 +64,11 @@ python run.py quota                      # today's free-tier usage
 pytest -q && ruff check .                # tests (no network, no keys needed)
 ```
 
+## Android app
+
+Kotlin app in [`android/`](android/README.md): share a reel or paste its link, a floating button over Instagram,
+one free check a day and rewarded ads for more. CI builds the APK on every push (Actions → ci → Artifacts).
+
 ## API server
 
 ```bash

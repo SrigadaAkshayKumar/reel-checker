@@ -3,8 +3,9 @@
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
 `docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-8 (pipeline + CLI, FastAPI + queue,
 Next.js in `frontend/`, own index, eval / bench / review, deployment: `compose.yaml`, `deploy/`, `docs/deploy.md`).
-Now: the Android app (`docs/android-build-guide.md`). Its backend is done (`app/api/mobile.py`, `docs/mobile-api.md`):
-anonymous accounts, one free check a day, rewarded-ad credits via AdMob SSV, pasted links, refunds.
+Android app in `android/` (plan: `docs/android-build-guide.md`, API: `docs/mobile-api.md`, build: `android/README.md`):
+share target, floating button over Instagram, rewarded ads. Backend side: `app/api/mobile.py` (anonymous accounts, one
+free check a day, AdMob SSV credits, pasted links, refunds).
 
 ## Rules that define the product
 
@@ -57,6 +58,12 @@ npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright a
 - Evidence is classified only in `pipeline/scoring.py` (sources and `run.py eval` both call it). Never decide
   `supports` inline in a source module, or the threshold sweep stops matching production. Threshold changes go in
   `.env` and should come from an eval run, not a guess.
+- Android: logic that needs no Android API (HTTP, polling, link parsing, wording) goes in `android/core` (plain Kotlin,
+  `./gradlew -p core test`, runs without the SDK); `android/app` is UI only. `core/…/Models.kt` mirrors the backend
+  JSON like `frontend/lib/api.ts`: change them together. Wording in `core/…/Wording.kt` follows `frontend/lib/present.ts`.
+  The app never counts checks or grants credits; it shows what the server says. Overlay windows are classic Views.
+  CI builds the APK (`android`) and drives it on an emulator against the real backend (`android-emulator`,
+  `android/ci/emulator_smoke.py`); keep both green. Keep Google's test AdMob ids in the repo; real ids come from `-P`.
 - Deployment: `compose.yaml` is the production stack and CI's `docker` job runs it with `deploy/smoke-test.sh`; keep
   both green. Nothing may log request lines or client IPs (uvicorn runs with `--no-access-log`, Caddy has no `log`).
   New settings need a line in `.env.example`; data lives in the `data` volume (`/var/lib/reel-checker`).
