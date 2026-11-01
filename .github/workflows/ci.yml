@@ -152,7 +152,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python android/ci/emulator_smoke.py apk/app-debug.apk emulator-out
+          script: python android/ci/emulator_smoke.py apk/app-debug.apk emulator-out ${{ runner.temp }}/backend.log
       - if: always()
         run: cp $RUNNER_TEMP/backend.log emulator-out/ 2>/dev/null || true
       - if: always()

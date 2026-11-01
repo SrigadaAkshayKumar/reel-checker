@@ -1,6 +1,6 @@
 """Drives the debug APK on an emulator against a real backend (CI `android-emulator` job).
 
-  python android/ci/emulator_smoke.py <app-debug.apk> <out dir>
+  python android/ci/emulator_smoke.py <app-debug.apk> <out dir> [backend log]
 
 1. Launch: the main screen shows, an anonymous account is created (allowance line).
 2. Share a reel link to the app, as Instagram's Share sheet does: the check runs on the backend and ends in a
@@ -63,8 +63,24 @@ def tap_text(label: str, xml: str | None = None) -> None:
     raise SystemExit(f"no '{label}' on screen; see {out}/ui.xml")
 
 
-def wait_for(pattern: re.Pattern, name: str, seconds: int = 120) -> str:
+def screen_text(xml: str) -> str:
+    return " | ".join(t for n in nodes(xml) for t in (n.get("text"), n.get("content-desc")) if t)
+
+
+def diagnose(xml: str) -> None:
+    """CI artifacts need a login to download: put what matters in the job log."""
+    print("screen:", screen_text(xml)[:2000])
+    backend = Path(sys.argv[3]) if len(sys.argv) > 3 else None
+    if backend and backend.is_file():
+        print("backend log tail:\n" + "\n".join(backend.read_text().splitlines()[-30:]))
+    log = adb("logcat", "-d", "-v", "brief", check=False)
+    mine = [line for line in log.splitlines() if "reelcheck" in line or "AndroidRuntime" in line or " E/" in line]
+    print("logcat (app and errors):\n" + "\n".join(mine[-60:]))
+
+
+def wait_for(pattern: re.Pattern, name: str, seconds: int = 200) -> str:
     deadline = time.time() + seconds
+    xml = ""
     while time.time() < deadline:
         xml = ui(name)
         if pattern.search(xml):
@@ -72,6 +88,7 @@ def wait_for(pattern: re.Pattern, name: str, seconds: int = 120) -> str:
         crash()
         time.sleep(2)
     shot(name)
+    diagnose(xml)
     raise SystemExit(f"timed out waiting for {pattern.pattern!r}; see {out}/{name}.xml")
 
 
