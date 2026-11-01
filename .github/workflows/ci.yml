@@ -118,3 +118,46 @@ jobs:
           name: reel-check-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+  android-emulator:
+    # Runs the APK on an emulator against a real backend (android/ci/emulator_smoke.py); screenshots are uploaded.
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: reel-check-debug-apk
+          path: apk
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Start the backend (no API keys; the emulator reaches it as 10.0.2.2:8000)
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install -r backend/requirements.txt
+          cd backend && DATA_DIR=$RUNNER_TEMP/data nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+            --no-access-log > $RUNNER_TEMP/backend.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python android/ci/emulator_smoke.py apk/app-debug.apk emulator-out
+      - if: always()
+        run: cp $RUNNER_TEMP/backend.log emulator-out/ 2>/dev/null || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-screenshots
+          path: emulator-out
+          retention-days: 14
