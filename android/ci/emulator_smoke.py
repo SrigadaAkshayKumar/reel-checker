@@ -155,11 +155,24 @@ adb("shell", "input", "keyevent", "KEYCODE_HOME")
 time.sleep(2)
 shot("3-dot")
 
-def window(title: str) -> bool:
-    """Is our overlay window `title` on screen? (uiautomator only dumps the front app, so ask the window manager)"""
+def window_block(title: str) -> str:
+    """Our overlay window's entry in the window manager (uiautomator only dumps the front app)."""
     dump = adb("shell", "dumpsys", "window", "windows", check=False)
     block = re.search(r"Window\{[^}]*" + re.escape(title) + r"\}.*?(?=\n  Window #|\Z)", dump, re.S)
-    return bool(block) and "mViewVisibility=0x0" in block.group(0)
+    return block.group(0) if block else ""
+
+
+def window(title: str) -> bool:
+    return "mViewVisibility=0x0" in window_block(title)
+
+
+def window_center(title: str) -> tuple[int, int]:
+    """Where the window really is: overlays sit below the status bar, whose height varies by device."""
+    m = re.search(r"\bframe=\[(-?\d+),(-?\d+)\]\[(-?\d+),(-?\d+)\]", window_block(title))
+    if not m:
+        raise SystemExit(f"no frame for {title}:\n{window_block(title)[:1500]}")
+    x1, y1, x2, y2 = map(int, m.groups())
+    return (x1 + x2) // 2, (y1 + y2) // 2
 
 
 def wait_window(title: str, seconds: int = 20) -> None:
@@ -190,10 +203,7 @@ def overlay_state(seconds: int = 200) -> str:
 
 wait_window("ReelCheck:dot")
 print("3a. floating button visible over the home screen")
-size = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size")).groups()
-density = int(re.search(r"(\d+)\s*$", adb("shell", "wm", "density").strip()).group(1)) / 160
-width = int(size[0])
-tap(int(width - (8 + 26) * density), int(300 + 26 * density))  # the dot's default place (OverlayService)
+tap(*window_center("ReelCheck:dot"))
 wait_window("ReelCheck:card")
 time.sleep(2)  # the field takes focus and the keyboard comes up
 shot("4-input")
