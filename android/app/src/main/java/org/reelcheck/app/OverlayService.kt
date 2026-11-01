@@ -17,6 +17,7 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.text.InputType
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -24,6 +25,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -112,6 +114,7 @@ class OverlayService : LifecycleService() {
             contentDescription = "Check this reel"
         }
         val lp = overlayParams(size, size, focusable = false).apply {
+            title = "ReelCheck:dot"
             gravity = Gravity.TOP or Gravity.START
             x = if (prefs.dotX >= 0) prefs.dotX else resources.displayMetrics.widthPixels - size - dp(8)
             y = prefs.dotY
@@ -194,8 +197,13 @@ class OverlayService : LifecycleService() {
         )
         showCard(body, height = ViewGroup.LayoutParams.WRAP_CONTENT)
         // Android 10+ lets only the focused app read the clipboard: read it once the card has focus.
+        // Then put the cursor in the field with the keyboard up, ready for a long-press paste.
         body.viewTreeObserver.addOnWindowFocusChangeListener { focused ->
-            if (focused && field.text.isNullOrBlank()) pasteInto(field, quiet = true)
+            if (!focused) return@addOnWindowFocusChangeListener
+            if (field.text.isNullOrBlank()) pasteInto(field, quiet = true)
+            if (field.requestFocus()) {
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(field, 0)
+            }
         }
     }
 
@@ -221,7 +229,10 @@ class OverlayService : LifecycleService() {
     private fun renderResult() {
         val body = cardBody ?: return
         body.removeAllViews()
-        when (val s = checks.state.value) {
+        val state = checks.state.value
+        // Debug builds only: lets the emulator test follow the card (android/ci/emulator_smoke.py).
+        if (BuildConfig.DEBUG) Log.d("ReelOverlay", "state ${state::class.simpleName}")
+        when (val s = state) {
             CheckState.Idle -> { showInputCard(); return }
             is CheckState.Working -> body.add(row(ProgressBar(this), text(s.text)))
             is CheckState.Done -> {
@@ -277,6 +288,7 @@ class OverlayService : LifecycleService() {
             addView(content)
         }
         val lp = overlayParams(resources.displayMetrics.widthPixels - dp(16), height, focusable = true).apply {
+            title = "ReelCheck:card"
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             y = dp(16)
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE

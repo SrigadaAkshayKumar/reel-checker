@@ -143,18 +143,55 @@ adb("shell", "input", "keyevent", "KEYCODE_HOME")
 time.sleep(2)
 shot("3-dot")
 
+def window(title: str) -> bool:
+    """Is our overlay window `title` on screen? (uiautomator only dumps the front app, so ask the window manager)"""
+    dump = adb("shell", "dumpsys", "window", "windows", check=False)
+    block = re.search(r"Window\{[^}]*" + re.escape(title) + r"\}.*?(?=\n  Window #|\Z)", dump, re.S)
+    return bool(block) and "mViewVisibility=0x0" in block.group(0)
+
+
+def wait_window(title: str, seconds: int = 20) -> None:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        if window(title):
+            return
+        crash()
+        time.sleep(1)
+    dump = adb("shell", "dumpsys", "window", "windows", check=False)
+    print("our windows:", re.findall(r"Window\{[^}]*(?:reelcheck|ReelCheck)[^}]*\}", dump))
+    print("services:", adb("shell", "dumpsys", "activity", "services", PKG, check=False)[:1500])
+    diagnose("")
+    raise SystemExit(f"overlay window {title} did not appear")
+
+
+def overlay_state(seconds: int = 200) -> str:
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        found = re.findall(r"ReelOverlay: state (\w+)", adb("logcat", "-d", "-s", "ReelOverlay:D", check=False))
+        if found and found[-1] != "Working":
+            return found[-1]
+        crash()
+        time.sleep(2)
+    diagnose("")
+    raise SystemExit("the floating card never showed a result")
+
+
+wait_window("ReelCheck:dot")
+print("3a. floating button visible over the home screen")
 size = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size")).groups()
 density = int(re.search(r"(\d+)\s*$", adb("shell", "wm", "density").strip()).group(1)) / 160
 width = int(size[0])
 tap(int(width - (8 + 26) * density), int(300 + 26 * density))  # the dot's default place (OverlayService)
-xml = wait_for(re.compile("Check this reel"), "4-input", 20)
+wait_window("ReelCheck:card")
+time.sleep(2)  # the field takes focus and the keyboard comes up
 shot("4-input")
-field = next(n for n in nodes(xml) if n.get("class") == "android.widget.EditText")
-tap(*field["center"])
+print("3b. tapping it opens the input card")
 adb("shell", "input", "text", LINK)
-tap_text("Check")
-xml = wait_for(FINISHED, "5-result")
+adb("shell", "input", "keyevent", "KEYCODE_ENTER")  # the field's Go action runs the check
+state = overlay_state()
 shot("5-result")
 crash()
-print("3. floating button: dot, input card, result card:", FINISHED.search(xml).group(0))
+if state not in ("Done", "NeedFile", "NeedAd", "Error"):
+    raise SystemExit(f"unexpected card state {state}")
+print("3c. floating card ran the check and shows:", state)
 print("All good.")
