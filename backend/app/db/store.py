@@ -61,7 +61,13 @@ create table if not exists jobs (
   attempts integer not null default 0,
   created_at text not null,
   started_at text,
-  finished_at text
+  finished_at text,
+  error_code text,                 -- machine-readable failure, e.g. need_file (link could not be fetched)
+  user_id text,                    -- app account that paid for the job (null for the website)
+  charge text,                     -- free | ad | refunded:free | refunded:ad
+  charge_day text,                 -- the app day the charge counted against
+  source_url text,                 -- link to fetch; cleared once fetched
+  link_key text                    -- hash of the reel link, for answering the same link from cache
 );
 create index if not exists jobs_status on jobs(status, created_at);
 create table if not exists rate_limit (
@@ -83,9 +89,37 @@ create table if not exists feedback (
   note text,
   created_at text not null
 );
+create table if not exists app_users (
+  id text primary key,             -- random; also the AdMob server-side verification user id
+  token_hash text not null unique, -- sha256 of the bearer token; the token itself is never stored
+  ad_credits integer not null default 0,
+  created_at text not null,
+  last_seen text
+);
+create table if not exists app_free (
+  user_id text not null,
+  day text not null,               -- India date (app_day_utc_offset_minutes)
+  used integer not null default 0,
+  primary key (user_id, day)
+);
+create table if not exists ssv_seen (
+  transaction_id text primary key, -- AdMob reward callbacks, deduplicated
+  user_id text,
+  outcome text not null,
+  created_at text not null
+);
+create table if not exists link_reports (
+  link_key text primary key,       -- hash of the reel code, never the link
+  report_id text not null,
+  created_at text not null
+);
 """
 
-JOB_FIELDS = {"status", "step", "error", "report_id", "started_at", "finished_at", "upload_path", "attempts"}
+JOB_COLUMNS_V3 = (("error_code", "text"), ("user_id", "text"), ("charge", "text"), ("charge_day", "text"),
+                  ("source_url", "text"), ("link_key", "text"))
+
+JOB_FIELDS = {"status", "step", "error", "report_id", "started_at", "finished_at", "upload_path", "attempts",
+              "error_code", "source_url"}
 
 
 class Store:
@@ -100,6 +134,12 @@ class Store:
             self.db.execute("pragma journal_mode=wal")
         self._migrate()
         self.db.executescript(SCHEMA)
+        # v3 (Phase 9): app charges and link jobs on the jobs table.
+        jobs = {r["name"] for r in self.db.execute("pragma table_info(jobs)")}
+        for col, decl in JOB_COLUMNS_V3:
+            if col not in jobs:
+                self.db.execute(f"alter table jobs add column {col} {decl}")
+        self.db.commit()
 
     def close(self) -> None:
         self.db.close()
@@ -231,15 +271,18 @@ class Store:
         return out
 
     # --- jobs ----------------------------------------------------------------
-    def job_create(self, job_id: str, *, video_hash: str, upload_path: str | None, caption: str = "",
-                   posted_date: str | None = None, status: str = "queued", report_id: str | None = None) -> None:
+    def job_create(self, job_id: str, *, video_hash: str | None, upload_path: str | None, caption: str = "",
+                   posted_date: str | None = None, status: str = "queued", report_id: str | None = None,
+                   user_id: str | None = None, charge: str | None = None, charge_day: str | None = None,
+                   source_url: str | None = None, link_key: str | None = None) -> None:
         now = _now()
         done = status == "done"
         self.db.execute(
             "insert into jobs (id, status, step, video_hash, upload_path, caption, posted_date, report_id,"
-            " created_at, finished_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " created_at, finished_at, user_id, charge, charge_day, source_url, link_key)"
+            " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (job_id, status, "done" if done else None, video_hash, upload_path, caption, posted_date,
-             report_id, now, now if done else None))
+             report_id, now, now if done else None, user_id, charge, charge_day, source_url, link_key))
         self.db.commit()
 
     def job_get(self, job_id: str) -> dict | None:
@@ -291,6 +334,7 @@ class Store:
             if r["attempts"] >= max_attempts:
                 self.job_update(r["id"], status="failed", step="failed", finished_at=_now(),
                                 error="The analysis stopped unexpectedly. Please try again.")
+                self.charge_refund(r["id"])
             else:
                 self.job_update(r["id"], status="queued", step=None)
         return [r["id"] for r in rows]
@@ -309,6 +353,101 @@ class Store:
                         (date.today().isoformat(), client))
         self.db.commit()
         return True
+
+    # --- Android app: accounts, daily free check, ad credits ----------------------
+    def app_user_create(self, user_id: str, token_hash: str) -> None:
+        self.db.execute("insert into app_users (id, token_hash, created_at) values (?, ?, ?)",
+                        (user_id, token_hash, _now()))
+        self.db.commit()
+
+    def app_user_by_token(self, token_hash: str) -> dict | None:
+        row = self.db.execute("select * from app_users where token_hash = ?", (token_hash,)).fetchone()
+        if not row:
+            return None
+        if (row["last_seen"] or "")[:10] != _now()[:10]:  # day resolution is enough
+            self.db.execute("update app_users set last_seen = ? where id = ?", (_now(), row["id"]))
+            self.db.commit()
+        return dict(row)
+
+    def app_user(self, user_id: str) -> dict | None:
+        row = self.db.execute("select * from app_users where id = ?", (user_id,)).fetchone()
+        return dict(row) if row else None
+
+    def app_free_used(self, user_id: str, day: str) -> int:
+        row = self.db.execute("select used from app_free where user_id = ? and day = ?", (user_id, day)).fetchone()
+        return row["used"] if row else 0
+
+    def app_spend(self, user_id: str, day: str, free_per_day: int) -> str | None:
+        """Pay for one check: today's free check first, then an ad credit. None = watch an ad first."""
+        self.db.execute("begin immediate")
+        try:
+            if self.app_free_used(user_id, day) < free_per_day:
+                self.db.execute("insert into app_free values (?, ?, 1)"
+                                " on conflict(user_id, day) do update set used = used + 1", (user_id, day))
+                kind = "free"
+            elif self.db.execute("update app_users set ad_credits = ad_credits - 1"
+                                 " where id = ? and ad_credits > 0", (user_id,)).rowcount:
+                kind = "ad"
+            else:
+                kind = None
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return kind
+
+    def charge_refund(self, job_id: str) -> str | None:
+        """Give back what a failed or degraded job cost. Idempotent: a job is refunded at most once."""
+        self.db.execute("begin immediate")
+        try:
+            row = self.db.execute("select user_id, charge, charge_day from jobs where id = ?", (job_id,)).fetchone()
+            kind = row["charge"] if row and row["user_id"] else None
+            if kind == "free":
+                self.db.execute("update app_free set used = max(used - 1, 0) where user_id = ? and day = ?",
+                                (row["user_id"], row["charge_day"]))
+            elif kind == "ad":
+                self.db.execute("update app_users set ad_credits = ad_credits + 1 where id = ?", (row["user_id"],))
+            else:
+                kind = None
+            if kind:
+                self.db.execute("update jobs set charge = ? where id = ?", (f"refunded:{kind}", job_id))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return kind
+
+    def ssv_grant(self, transaction_id: str, user_id: str, max_credits: int) -> str:
+        """Record one verified rewarded-ad view: granted | duplicate | unknown_user | capped."""
+        self.db.execute("begin immediate")
+        try:
+            if self.db.execute("select 1 from ssv_seen where transaction_id = ?", (transaction_id,)).fetchone():
+                self.db.commit()
+                return "duplicate"
+            user = self.db.execute("select ad_credits from app_users where id = ?", (user_id,)).fetchone()
+            if not user:
+                outcome = "unknown_user"
+            elif user["ad_credits"] >= max_credits:
+                outcome = "capped"
+            else:
+                self.db.execute("update app_users set ad_credits = ad_credits + 1 where id = ?", (user_id,))
+                outcome = "granted"
+            self.db.execute("insert into ssv_seen values (?, ?, ?, ?)",
+                            (transaction_id, user_id or None, outcome, _now()))
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
+            raise
+        return outcome
+
+    # --- reel links ------------------------------------------------------------
+    def link_report(self, key: str) -> dict | None:
+        row = self.db.execute("select report_id from link_reports where link_key = ?", (key,)).fetchone()
+        return self.report_by_id(row["report_id"]) if row else None
+
+    def link_report_put(self, key: str, report_id: str) -> None:
+        self.db.execute("insert or replace into link_reports values (?, ?, ?)", (key, report_id, _now()))
+        self.db.commit()
 
     def review_put(self, report_id: str, outcome: str, note: str = "") -> None:
         self.db.execute("insert or replace into reviews values (?, ?, ?, ?)", (report_id, outcome, note, _now()))

@@ -3,7 +3,8 @@
 Checks whether an Instagram reel (a user-supplied file) shows old footage passed off as new. Product brief:
 `docs/project-overview.md`; build plan and phases: `docs/workflow.md`. Done: Phases 1-8 (pipeline + CLI, FastAPI + queue,
 Next.js in `frontend/`, own index, eval / bench / review, deployment: `compose.yaml`, `deploy/`, `docs/deploy.md`).
-Next: Phase 9, launch and the WhatsApp bot.
+Now: the Android app (`docs/android-build-guide.md`). Its backend is done (`app/api/mobile.py`, `docs/mobile-api.md`):
+anonymous accounts, one free check a day, rewarded-ad credits via AdMob SSV, pasted links, refunds.
 
 ## Rules that define the product
 
@@ -11,8 +12,13 @@ Next: Phase 9, launch and the WhatsApp bot.
 - The verdict is decided by rules in `backend/app/pipeline/verdict.py`. The LLM only extracts the claim and explains;
   it never decides, and its summary may only use retrieved evidence.
 - Report what the evidence shows about the footage; never accuse a person or account.
-- No Instagram scraping: input is always a file the user provides. Delete work files after analysis; keep only
-  hashes and results. Never commit media, `.env`, databases or reports.
+- Input is a file the user provides, or (app only) one Instagram reel link the user pasted, fetched once by the
+  worker with yt-dlp (`pipeline/fetch.py`: canonical Instagram links only, Instagram extractor only, no login or
+  cookies). No crawling, no accounts. Delete work files and the link after analysis; keep only hashes and
+  results. Never commit media, `.env`, databases or reports.
+- The server counts app checks (`app_spend`), never the app. Ad credits come only from a verified AdMob callback
+  for our own ad units (`api/admob.py`). Failed or partial jobs are refunded once (`charge_refund`); cached answers
+  are free.
 - Free stack only. Check order: own index → Fact Check API → YouTube → Vision (last resort). Cache every external
   call (`api_cache`) and charge every call to a budget (`quota`). When a check can't run, mark the report partial
   rather than failing.

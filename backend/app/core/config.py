@@ -100,6 +100,19 @@ class Settings:
     job_stale_seconds: int = 600        # a 'running' job older than this is assumed dead
     job_max_attempts: int = 2
 
+    # Android app (Phase 9, docs/mobile-api.md): anonymous accounts, daily free check, rewarded-ad credits
+    app_free_checks_per_day: int = 1
+    app_max_ad_credits: int = 5         # banked credits; the app offers an ad only when none are left
+    app_day_utc_offset_minutes: int = 330  # the free check resets at midnight India time (UTC+5:30)
+    app_ip_daily_limit: int = 60        # checks per IP per day across app users (mobile carriers share IPs)
+    app_sessions_per_ip_day: int = 20   # new anonymous accounts per IP per day
+    admob_ad_unit_ids: str = ""         # comma-separated rewarded ad unit ids; ad callbacks for others are refused
+    admob_keys_url: str = "https://www.gstatic.com/admob/reward/verifier-keys.json"
+
+    # Reel links: fetched once by the worker with yt-dlp (Instagram only), deleted after analysis
+    link_fetch_enabled: bool = True
+    link_fetch_timeout: int = 120
+
     @property
     def factcheck_key(self) -> str:
         return self.factcheck_api_key or self.google_api_key

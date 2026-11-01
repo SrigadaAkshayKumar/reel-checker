@@ -5,6 +5,7 @@ GET  /api/jobs/{id}                   queued / running (with step) / done / fail
 GET  /api/reports/{id}                report JSON
 GET  /api/reports/{id}/files/{name}   comparison images and keyframes
 POST /api/reports/{id}/feedback       "was this correct?" / report an error
+/api/app/*, /api/admob/ssv            Android app: accounts, daily free check, ad credits (mobile.py)
 GET  /r/{id}                          public share page (share.py)
 GET  /api/health
 """
@@ -20,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from ..core.config import Settings
 from ..db.store import Store
-from ..pipeline import extract
+from ..pipeline import extract, fetch
 from ..pipeline.runner import VERSION, new_id
 from . import views
 from .deps import check_id, client_key, get_settings, get_store
@@ -64,10 +65,9 @@ def _parse_posted(value: str | None) -> date | None:
     return posted
 
 
-@router.post("/api/analyze", status_code=202)
-def analyze_upload(request: Request, file: UploadFile = File(...), caption: str = Form(""),
-                   posted_date: str | None = Form(None), settings: Settings = Depends(get_settings),
-                   store: Store = Depends(get_store)):
+def accept_upload(request: Request, file: UploadFile, caption: str, posted_date: str | None,
+                  settings: Settings) -> tuple[str, Path, extract.MediaInfo, str, date | None]:
+    """Validate and save an uploaded video. Returns (job id, saved path, media info, caption, posted date)."""
     max_bytes = int(settings.max_upload_mb * 1024 * 1024)
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > max_bytes + CHUNK:
@@ -75,15 +75,7 @@ def analyze_upload(request: Request, file: UploadFile = File(...), caption: str 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in VIDEO_EXTS:
         raise _error(415, "not_video", "Upload a video file (MP4, MOV, WEBM, MKV, 3GP).")
-    caption = caption.strip()
-    if len(caption) > 2200:
-        raise _error(422, "caption_too_long", "The caption can be at most 2,200 characters.")
-    posted = _parse_posted(posted_date)
-    client = client_key(request, settings)
-    if store.rate_used(client) >= settings.rate_limit_per_day:
-        raise _error(429, "rate_limited", f"Daily limit of {settings.rate_limit_per_day} checks reached. "
-                     "Try again tomorrow.")
-
+    caption, posted = check_caption(caption), _parse_posted(posted_date)
     job_id = new_id()
     dest = settings.uploads_dir / f"{job_id}{ext}"
     _save_upload(file, dest, max_bytes)
@@ -92,16 +84,40 @@ def analyze_upload(request: Request, file: UploadFile = File(...), caption: str 
     except extract.InputError as exc:
         dest.unlink(missing_ok=True)
         raise _error(400, "bad_video", f"Cannot analyse this file: {exc}.") from None
+    return job_id, dest, info, caption, posted
+
+
+def check_caption(caption: str) -> str:
+    caption = caption.strip()
+    if len(caption) > 2200:
+        raise _error(422, "caption_too_long", "The caption can be at most 2,200 characters.")
+    return caption
+
+
+def cached_job(store: Store, job_id: str, report: dict | None, base: str, **job) -> JSONResponse | None:
+    """Answer from a finished, complete report: a done job pointing at it, and no charge."""
+    if not report or report.get("partial"):
+        return None
+    store.job_create(job_id, upload_path=None, status="done", report_id=report["job_id"], **job)
+    return JSONResponse(views.public_job(store.job_get(job_id), None, base) | {"cached": True}, status_code=200)
+
+
+@router.post("/api/analyze", status_code=202)
+def analyze_upload(request: Request, file: UploadFile = File(...), caption: str = Form(""),
+                   posted_date: str | None = Form(None), settings: Settings = Depends(get_settings),
+                   store: Store = Depends(get_store)):
+    client = client_key(request, settings)
+    if store.rate_used(client) >= settings.rate_limit_per_day:
+        raise _error(429, "rate_limited", f"Daily limit of {settings.rate_limit_per_day} checks reached. "
+                     "Try again tomorrow.")
+    job_id, dest, info, caption, posted = accept_upload(request, file, caption, posted_date, settings)
 
     base = settings.public_base_url
     if not caption:  # same file, same question: reuse the finished report
-        cached = store.report_get(info.sha256)
-        if cached and not cached.get("partial"):
+        hit = cached_job(store, job_id, store.report_get(info.sha256), base, video_hash=info.sha256)
+        if hit:
             dest.unlink(missing_ok=True)
-            store.job_create(job_id, video_hash=info.sha256, upload_path=None, status="done",
-                             report_id=cached["job_id"])
-            body = views.public_job(store.job_get(job_id), None, base) | {"cached": True}
-            return JSONResponse(body, status_code=200)
+            return hit
 
     if not store.rate_take(client, settings.rate_limit_per_day):
         dest.unlink(missing_ok=True)
@@ -155,5 +171,6 @@ def feedback(report_id: str, body: Feedback, store: Store = Depends(get_store)):
 def health(settings: Settings = Depends(get_settings), store: Store = Depends(get_store)):
     queued = store.db.execute("select count(*) as n from jobs where status = 'queued'").fetchone()["n"]
     return {"ok": True, "version": VERSION, "queued": queued,
+            "links": settings.link_fetch_enabled and fetch.available(), "ads": bool(settings.admob_ad_unit_ids),
             "keys": {"gemini": bool(settings.gemini_api_key), "factcheck": bool(settings.factcheck_key),
                      "youtube": bool(settings.youtube_key), "vision": bool(settings.vision_key)}}

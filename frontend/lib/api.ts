@@ -10,6 +10,7 @@ export interface Job {
   steps: string[];
   queue_position: number | null;
   error: string | null;
+  error_code?: string | null; // e.g. need_file: an app link job whose reel could not be fetched
   report_id: string | null;
   report_url: string | null;
   share_url: string | null;

@@ -87,6 +87,8 @@ and run one or more `python -m app.worker` processes against the same database. 
 | POST | `/api/reports/{id}/feedback` | `{"correct": true/false, "note": "..."}`: "Was this correct?" / report an error |
 | GET | `/r/{id}` | public share page, mobile-first, with WhatsApp preview tags and a share button |
 | GET | `/api/health` | status, queue length, which keys are configured (never their values) |
+| POST/GET | `/api/app/session`, `/api/app/me`, `/api/app/check` | Android app: anonymous account, daily allowance, check a link or file ([`docs/mobile-api.md`](docs/mobile-api.md)) |
+| GET | `/api/admob/ssv` | AdMob rewarded-ad callback (Google-signed) → one ad credit |
 
 Errors come back as `{"detail": {"code": "...", "message": "..."}}`: `not_video` 415, `too_large` 413,
 `bad_video` 400 (corrupt, or over `MAX_VIDEO_SECONDS`), `bad_date` / `caption_too_long` 422, `rate_limited` 429.

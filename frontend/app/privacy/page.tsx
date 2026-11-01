@@ -6,11 +6,16 @@ export default function Privacy() {
   return (
     <article className="card stack">
       <h1>Privacy &amp; terms</h1>
-      <p className="sub">Plain language, short. Last updated October 2026.</p>
+      <p className="sub">Plain language, short. Covers this website and the Android app. Last updated November 2026.</p>
 
       <h2>What happens to your video</h2>
       <ul>
         <li>Your upload is used only to run the check, then deleted, whether the check succeeds or fails.</li>
+        <li>
+          In the app you can paste a reel link instead. We then fetch that one public reel, once, only to check it,
+          and delete it the same way. We keep a one-way scrambled code of the link so the same reel gets the same
+          answer without fetching it again, not the link itself.
+        </li>
         <li>
           We keep the report, a few small still frames from the video (shown on the report page and used for
           reverse image search), and digital fingerprints of the frames. Fingerprints let us spot the same footage
@@ -25,8 +30,21 @@ export default function Privacy() {
 
       <h2>What we store about you</h2>
       <p>
-        No account, no name, no phone number. To limit abuse we count checks per internet address per day, stored
+        No name, no email, no phone number. To limit abuse we count checks per internet address per day, stored
         only as a one-way scrambled code. Feedback you send is stored with the report, not with you.
+      </p>
+      <p>
+        The app creates an anonymous ID on first launch. With it we count your free check for the day and the
+        checks you earned by watching ads. It isn&apos;t linked to your name or Google account.
+      </p>
+
+      <h2>Ads in the app</h2>
+      <p>
+        The first check each day is free. Another check needs one short video ad, which you choose to watch. Ads
+        come from Google AdMob, which may use your device&apos;s advertising ID and collect usage data under
+        Google&apos;s own privacy policy; you can reset or delete that ID in your phone&apos;s settings. When you
+        finish an ad, Google tells our server your anonymous app ID, so we can add the check. If a check fails, or
+        some of our searches couldn&apos;t run, you get the check back.
       </p>
 
       <h2>What a result means</h2>
@@ -42,8 +60,8 @@ export default function Privacy() {
 
       <h2>Your part</h2>
       <p>
-        Upload only videos you are allowed to share, and don&apos;t use this service to harass anyone. We don&apos;t
-        download anything from Instagram or other platforms ourselves; we only check what you upload.
+        Upload or paste only reels you are allowed to share, and don&apos;t use this service to harass anyone. We
+        only fetch a reel when you paste its link, and never sign in to Instagram.
       </p>
     </article>
   );

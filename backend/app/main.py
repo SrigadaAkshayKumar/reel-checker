@@ -13,8 +13,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import pages, routes
+from .api import mobile, pages, routes
 from .core.config import Settings, load_settings
+from .core.http import Http
 from .db.store import Store
 from .pipeline.runner import VERSION
 
@@ -29,11 +30,14 @@ def log_config(settings: Settings, worker: bool) -> None:
              settings.data_dir, ",".join(k for k, v in keys.items() if v) or "none",
              "embedded" if worker else "separate", settings.cors_origins or "-", settings.public_base_url or "-",
              settings.trust_proxy)
+    log.info("app: links %s, rewarded ads %s", "on" if settings.link_fetch_enabled else "off",
+             "on" if settings.admob_ad_unit_ids else "off (no AdMob unit ids)")
     if not settings.cors_origins:
         log.warning("CORS_ORIGINS is empty: a frontend on another domain cannot call this API")
 
 
-def create_app(settings: Settings | None = None, *, start_worker: bool | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, start_worker: bool | None = None,
+               http: Http | None = None) -> FastAPI:
     settings = settings or load_settings()
     run_worker = settings.embedded_worker if start_worker is None else start_worker
 
@@ -52,11 +56,13 @@ def create_app(settings: Settings | None = None, *, start_worker: bool | None = 
 
     app = FastAPI(title="Reel Fact-Checker", version=VERSION, lifespan=lifespan)
     app.state.settings = settings
+    app.state.http = http or Http()
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     if origins:
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"],
-                           allow_headers=["Content-Type"])
+                           allow_headers=["Content-Type"])  # the app is not a browser: no CORS
     app.include_router(routes.router)
+    app.include_router(mobile.router)
     app.include_router(pages.router)
     return app
 
