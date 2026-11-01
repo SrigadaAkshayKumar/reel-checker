@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reel Check</string>
+    <string name="overlay_channel">Floating check button</string>
+    <string name="overlay_notification">Tap the floating button over Instagram to check a reel</string>
+    <string name="overlay_stop">Stop</string>
+</resources>
