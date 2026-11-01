@@ -112,7 +112,7 @@ print("1. main screen and anonymous account: ok")
 
 # 2. Share sheet
 adb("shell", "am", "start", "-W", "-a", "android.intent.action.SEND", "-t", "text/plain", "--es",
-    "android.intent.extra.TEXT", f"Look at this {LINK}?igsh=abc", "-n", f"{PKG}/org.reelcheck.app.ShareReceiverActivity")
+    "android.intent.extra.TEXT", f"'Look at this {LINK}?igsh=abc'",  # adb shell joins args: quote "-n", f"{PKG}/org.reelcheck.app.ShareReceiverActivity")
 xml = wait_for(FINISHED, "2-shared")
 shot("2-shared")
 print("2. shared link checked:", FINISHED.search(xml).group(0))

@@ -104,7 +104,12 @@ class MainActivity : ComponentActivity() {
     /** A link or video handed over by [ShareReceiverActivity] or the floating button. */
     private fun handle(intent: Intent?) {
         intent ?: return
-        Links.findReel(intent.getStringExtra(EXTRA_LINK))?.let { vm.checks.check(CheckInput.Link(it)) }
+        if (intent.hasExtra(EXTRA_LINK)) {
+            val link = Links.findReel(intent.getStringExtra(EXTRA_LINK))
+            if (link != null) vm.checks.check(CheckInput.Link(link))
+            else vm.failed = "That share didn't include an Instagram reel link. In Instagram, tap Share on the " +
+                "reel, then Reel Check (or Copy link and paste it here)."
+        }
         IntentCompat.getParcelableExtra(intent, EXTRA_VIDEO, Uri::class.java)?.let { vm.checkVideo(this, it) }
         if (intent.getBooleanExtra(EXTRA_PICK_FILE, false)) vm.failed = PICK_HINT
     }
