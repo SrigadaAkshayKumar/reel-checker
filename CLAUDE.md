@@ -62,8 +62,8 @@ npm run e2e:build && E2E_PYTHON=../.venv/bin/python npm run e2e   # Playwright a
   `./gradlew -p core test`, runs without the SDK); `android/app` is UI only. `core/…/Models.kt` mirrors the backend
   JSON like `frontend/lib/api.ts`: change them together. Wording in `core/…/Wording.kt` follows `frontend/lib/present.ts`.
   The app never counts checks or grants credits; it shows what the server says. Overlay windows are classic Views.
-  CI builds the APK (`android`) and drives it on an emulator against the real backend (`android-emulator`,
-  `android/ci/emulator_smoke.py`); keep both green. Keep Google's test AdMob ids in the repo; real ids come from `-P`.
+  CI builds the APK on every push (`android` in `ci.yml`); `android-emulator.yml` drives it on an emulator against
+  the real backend (`android/ci/emulator_smoke.py`) only when the app or the backend code it uses changes; keep both green. Keep Google's test AdMob ids in the repo; real ids come from `-P`.
 - Deployment: `compose.yaml` is the production stack and CI's `docker` job runs it with `deploy/smoke-test.sh`; keep
   both green. Nothing may log request lines or client IPs (uvicorn runs with `--no-access-log`, Caddy has no `log`).
   New settings need a line in `.env.example`; data lives in the `data` volume (`/var/lib/reel-checker`).
